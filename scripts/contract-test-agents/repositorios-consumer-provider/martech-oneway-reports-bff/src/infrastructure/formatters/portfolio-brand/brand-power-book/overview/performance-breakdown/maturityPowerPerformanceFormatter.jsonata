@@ -1,0 +1,140 @@
+/**
+ * 🔢 MATURITY POWER PERFORMANCE FORMATTER
+ * 🎯 Component: KPI table (maturidade × ABI / Competitor)
+ * 📍 Used on: BrandPowerBook > Performance breakdown > Maturity
+ * 🔄 Input: performance-breakdown_by-maturity
+ * 📤 Output: table + legend (raiz)
+ */
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+
+  $config := {
+    "maturityOrder": ["M3", "M2", "M1"],
+    "variation": { "unit_measure": "pp" },
+    "direction": { "up": "#49764B", "down": "#A20A0A" },
+    "legend": [
+      { "label": "ABI", "color": "#EDCD20", "selected_color": "#EDDAB1" },
+      { "label": "Competitor", "color": "#97ADBB", "selected_color": "#D3E3EE" },
+      { "label": "Competitor",  "color":  "#46ca7b", "selected_color": "#D3E3EE"   }
+
+    ]
+  };
+
+  $pickRepresentativeRow := function($rows) {
+    (
+      $sorted := $sort($rows, function($left, $right) {
+        $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+      });
+      $count($sorted) > 0 ? $sorted[0] : null
+    )
+  };
+
+  $rowsForMaturity := function($maturityKey, $levelUpper) {
+    $filter(
+      $data,
+      function($row) {
+        $row.maturity = $maturityKey and $uppercase($row.level_1) = $levelUpper
+      }
+    )
+  };
+
+  $buildAbiCell := function($item) {
+    {
+      "id": { "value": $item.maturity },
+      "ac": {
+        "chartData": {
+          "data": [$item.ac],
+          "backgroundColor": [$config.legend[0].color],
+          "secondaryBackgroundColor": [$config.legend[0].selected_color]
+        }
+      },
+      "ly": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $lookup($config.direction, $item.variationDirectionVsLy),
+        "value": $item.ac_vs_ly
+      },
+      "lq": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $item.ac_vs_lq <= 0 ? "down" : "up",
+        "value": $item.ac_vs_lq
+      }
+    }
+  };
+
+  $buildCompetitorCell := function($item) {
+    (
+      $legend:= $item.raw_brand = "Heineken" ? $config.legend[2] : $config.legend[1];
+
+    {
+      "type": { "value": "competitor" },
+      "id": { "value": $item.maturity },
+      "ac": {
+        "chartData": {
+          "data": [$item.ac],
+          "backgroundColor": [$legend.color],
+          "secondaryBackgroundColor": [$legend.selected_color]
+        }
+      },
+      "ly": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $item.ac_vs_ly <= 0 ? "down" : "up",
+        "value": $item.ac_vs_ly
+      },
+      "lq": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $item.ac_vs_ly <= 0 ? "down" : "up",
+        "value": $item.ac_vs_lq
+      }
+    }
+    )
+  };
+
+  $cellsForMaturity := function($maturityKey) {
+    $append(
+      $pickRepresentativeRow($rowsForMaturity($maturityKey, "ABI"))
+        ~> function($abiRow) { $exists($abiRow) ? [$buildAbiCell($abiRow)] : [] },
+      $pickRepresentativeRow($rowsForMaturity($maturityKey, "COMP"))
+        ~> function($compRow) { $exists($compRow) ? [$buildCompetitorCell($compRow)] : [] }
+    )
+  };
+
+  $isEmpty := $count($data) = 0;
+  $distinctMaturities := $isEmpty ? [] : $distinct($data.maturity);
+  $orderedMaturities := $isEmpty
+    ? []
+    : $filter(
+      $config.maturityOrder,
+      function($maturityKey) { $maturityKey in $distinctMaturities }
+    );
+
+  $headerLyTitle := $isEmpty
+    ? "vs LY"
+    : "vs " & $formatLyQuarter($data[0].dt_end);
+  $headerLqTitle := $isEmpty
+    ? "vs LQ"
+    : "vs " & $formatLqQuarter($data[0].dt_end);
+
+  $tableHeader := [
+    { "id": "id", "title": "" },
+    { "id": "ac", "title": "AC" },
+    { "id": "ly", "title": $headerLyTitle },
+    { "id": "lq", "title": $headerLqTitle }
+  ];
+
+  $flatRows := $isEmpty
+    ? []
+    : $reduce(
+      $map($orderedMaturities, $cellsForMaturity),
+      function($accumulator, $maturityPair) { $append($accumulator, $maturityPair) },
+      []
+    );
+
+  {
+    "table": {
+      "header": $tableHeader,
+      "rows": [[ $flatRows ]]
+    },
+    "legend": $config.legend
+  }
+)

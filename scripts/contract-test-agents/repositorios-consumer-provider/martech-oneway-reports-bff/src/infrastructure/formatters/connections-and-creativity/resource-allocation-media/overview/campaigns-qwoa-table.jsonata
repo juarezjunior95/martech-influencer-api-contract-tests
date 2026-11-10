@@ -1,0 +1,85 @@
+(
+  /**
+   * 🎯 Component: Campaigns QWOA Table (by country)
+   * 📍 Used on: Resource Allocation Media > Overview
+   * 🔄 Input: connections-and-creativity_resource-allocation-media_overview_campaigns-qwoa-table
+   * 📤 Output: campaigns { header, rows }
+   * 🔧 Config: color_up, color_down, header, unit_measure
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "color_up": "#49764B",
+    "color_down": "#A20A0A",
+    "header": {
+      "countries_title": "Countries",
+      "ly_title": "vs LY",
+      "ac_suffix": " AC"
+    },
+    "unit_measure": { "comparison": "pp", "value": "%" }
+  };
+
+  $countryMap := $getCountryMap();
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $dsKey := $keys($datasources)[0];
+  $ds := $lookup($datasources, $dsKey);
+  $data := $exists($ds.data) ? $ds.data : ($exists($ds) and $type($ds) = "array" ? $ds : []);
+
+  $firstRow := $count($data) > 0 ? $data[0] : {};
+  $hasBrands := $count($data[raw_brand != "N/A"]) > 0;
+  $lyLabel := $exists($firstRow.lyMonthLabel) ? $firstRow.lyMonthLabel : $formatDateToMonth($string($firstRow.dt_ini));
+  $lyYear := $contains($lyLabel, "'") ? $split($lyLabel, "'")[1] : "";
+  $currLabel := $exists($firstRow.refreshMonthLabel) ? $firstRow.refreshMonthLabel : $formatDateToMonth($string($firstRow.dt_end));
+  $currYear := $contains($currLabel, "'") ? $split($currLabel, "'")[1] : "";
+
+  $header := [
+    $hasBrands ? { "id": "brands", "title": "Brands" } : { "id": "countries", "title": "Countries" },
+    { "id": "previous_year_AC", "title": $lyYear & $config.header.ac_suffix },
+    { "id": "current_year_AC", "title": $currYear & $config.header.ac_suffix },
+    { "id": "ly", "title": $config.header.ly_title }
+  ];
+
+  $rowToCell := function($row) {
+    (
+      $hasLy := $exists($row.ly) and $type($row.ly) = "number";
+      $hasAc := $exists($row.ac) and $type($row.ac) = "number";
+      $hasVsLy := $exists($row.ac_vs_ly) and $type($row.ac_vs_ly) = "number";
+      $lyColor := $hasVsLy and $row.ac_vs_ly > 0
+        ? $config.color_up
+        : $config.color_down;
+      $merge([
+        $row.raw_brand = "N/A"
+          ? { "countries": { "value": $lookup($countryMap, $row.country_iso_code_3) ?: $row.country_iso_code_3 } }
+          : { "brands": { "value": $row.raw_brand } },
+        {
+        "previous_year_AC": $hasLy
+          ? { "value": $row.ly, "unitMeasure": $config.unit_measure.value }
+          : { "value": "-", "unitMeasure": "" },
+        "current_year_AC": $hasAc
+          ? { "value": $row.ac, "unitMeasure": $config.unit_measure.value }
+          : { "value": "-", "unitMeasure": "" },
+        "ly": $hasVsLy
+          ? { "value": $row.ac_vs_ly, "unitMeasure": $config.unit_measure.comparison, "variationDirection": $lyColor }
+          : { "value": "-", "unitMeasure": "" }
+        }
+      ])
+    )
+  };
+
+  $count($data) = 0
+    ? { "campaigns": { "empty": true } }
+    : (
+      $mapped := $map($data, $rowToCell);
+      $dataRows := $type($mapped) = "array" ? $mapped : ($exists($mapped) ? [$mapped] : []);
+      $rows := [ [$dataRows], [] ];
+
+      {
+        "campaigns": {
+          "header": $header,
+          "rows": $rows
+        }
+      }
+    )
+)

@@ -1,0 +1,10 @@
+export declare const VARIATION_DIRECTIONS: readonly ["up", "down", "neutral"];
+export declare const UNIT_OF_MEASURE: readonly ["pp", "%", "hl", "number"];
+export declare const TEXT_ALIGNMENTS: readonly ["left", "center", "right"];
+export declare const TITLE_SIZES: readonly ["H2", "H3", "H4", "H5"];
+export declare const HEX_COLOR_PATTERN = "^#[0-9A-Fa-f]{6}$";
+export declare const STRICT_ID_PATTERN = "^[a-z][a-z0-9_-]*$";
+export declare const ID_PATTERN = "^[a-zA-Z_][a-zA-Z0-9_-]*$";
+export declare const DYNAMIC_PROPERTY_PATTERN = "^[a-zA-Z_][a-zA-Z0-9_-]*$";
+export declare const TREND_VALUES: readonly ["positive", "negative"];
+export declare const INNOVATION_CARD_IDS: readonly ["volume", "volumeMix", "nr", "maco"];

@@ -1,0 +1,181 @@
+(
+  /**
+   * 🎯 Component: Non Working Money Ranking Chart (by segment or country, with Guideline and BU variation)
+   * 📍 Used on: Resource Allocation Media > Overview
+   * 🔄 Input: connections-and-creativity_resource-allocation-media_overview_unified-ranking
+   * 📤 Output: resource_allocation { owr_resource-allocation_overview_ranking-chart_nwm: { datasets, labels, icons, variation_caption, horizontalDashedLine } }
+   * 🔧 Config: chart_key, segments, country_map, datasets, variation_caption, unit_of_measure, horizontal_lines
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "chart_key": "owr_resource-allocation_overview_ranking-chart_nwm",
+    "datasets": {
+      "label": "Non Working Money",
+      "background_color": "#F0D59E"
+    },
+    "variation_caption": {
+      "guideline": {
+        "title": "Guideline",
+        "subtitle": "vs AC [ YTD ]"
+      },
+      "bu": {
+        "title": "BU",
+        "subtitle": "vs AC [ YTD ]"
+      }
+    },
+    "unit_of_measure": "pp",
+    "horizontal_lines": {
+      "first_value": 17,
+      "second_value": 17,
+      "fallback": 17,
+      "unit": "%"
+    },
+    "colors": {
+      "variation_up": "#00810d",
+      "variation_down": "#a30a0a"
+    },
+    "direction_when_positive": "down",
+    "direction_when_negative": "up"
+  };
+
+  $segments := $getSegmentColors();
+  $countryMap := $getCountryMap();
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $dsKey := $keys($datasources)[0];
+  $ds := $lookup($datasources, $dsKey);
+  $rawData := $exists($ds.data) ? $ds.data : ($exists($ds) and $type($ds) = "array" ? $ds : []);
+  $filteredData := $count($rawData) > 0
+    ? $rawData[level_2 = "non_working_money"]
+    : [];
+  $isEmpty := $count($filteredData) = 0;
+
+  $isCountryView := $count($filteredData[raw_brand = "N/A"]) > 0;
+  $entry := $isEmpty
+    ? []
+    : (
+      $isCountryView
+        ? $sort($filteredData, function($a, $b) { $a.ac < $b.ac })
+        : (
+          $brands := $sort($filteredData[global_brands = "Brand"], function($a, $b) { $a.ac < $b.ac });
+          $globalBrands := $sort($filteredData[global_brands = "Global Brand"], function($a, $b) { $a.ac < $b.ac });
+          $append($brands, $globalBrands)
+        )
+    );
+  $entrySorted := $entry;
+  $dataValues := $ensureArray($entrySorted.ac);
+  $maxValue := $max($dataValues);
+  $suggestedMax := $maxValue >= 100 ? 100 : $ceil($maxValue);
+  $formattedValues := $ensureArray($map($entrySorted, function($row) {
+    (
+      $fv := $formatValue($row.ac);
+      $fv != "-" ? $fv & $config.horizontal_lines.unit : ""
+    )
+  }));
+  $horizontalDashedLine := $isEmpty
+    ? []
+    : (
+      $isCountryView
+        ? [{ "value": $config.horizontal_lines.fallback, "unitMeasure": $config.horizontal_lines.unit }]
+        : (
+          $brandCount := $count($entrySorted[global_brands = "Brand"]);
+          $globalBrandCount := $count($entrySorted[global_brands = "Global Brand"]);
+          $lines := $filter(
+            [
+              $brandCount > 0 ? { "value": $config.horizontal_lines.first_value, "unitMeasure": $config.horizontal_lines.unit, "xEnd": $brandCount } : null,
+              $globalBrandCount > 0 ? { "value": $config.horizontal_lines.second_value, "unitMeasure": $config.horizontal_lines.unit } : null
+            ],
+            function($item) { $item != null }
+          );
+          $count($lines) > 0 ? $lines : [{ "value": $config.horizontal_lines.fallback, "unitMeasure": $config.horizontal_lines.unit }]
+        )
+    );
+
+  {
+    "resource_allocation": $isEmpty
+      ? { "empty": true }
+      : {
+          ($config.chart_key): {
+            "datasets": [
+              {
+                "type": "bar",
+                "label": $config.datasets.label,
+                "data": $dataValues,
+                "backgroundColor": [$config.datasets.background_color],
+                "baseChartColor": $isCountryView
+                  ? null
+                  : $ensureArray($entrySorted.($lookup($segments, segment) ?: $segments.Megabrands)),
+                "formattedData": $formattedValues
+              }
+            ],
+            "formattedData": [[$map($entrySorted, function($row) {
+              (
+                $fv := $formatValue($row.ac);
+                $fv != "-" ? $fv & $config.horizontal_lines.unit : ""
+              )
+            })]],
+            "labels": $ensureArray(
+              $map($entrySorted, function($v) {
+                $v.raw_brand = "N/A"
+                  ? ($lookup($countryMap, $v.country_iso_code_3) ?: $v.country_iso_code_3)
+                  : $v.raw_brand
+              })
+            ),
+            "icons": $ensureArray(
+              $entrySorted.(global_brands = "Global Brand" ? "world" : "")
+            ),
+            "suggestedMax": $suggestedMax,
+            "hasPercentage": true,
+            "variationCaptionData": [
+              {
+                "title": $config.variation_caption.guideline.title,
+                "subtitle": $config.variation_caption.guideline.subtitle,
+                "label": " ",
+                "data": $ensureArray(
+                  $map($entrySorted, function($row) {
+                    (
+                      $val := $row.vs_guideline;
+                      $numVal := $exists($val) and $type($val) = "number" ? $val : null;
+                      $direction := $numVal != null ? ($numVal > 0 ? $config.direction_when_positive : $config.direction_when_negative) : $config.direction_when_negative;
+                      $color := $numVal != null ? ($direction = "up" ? $config.colors.variation_up : $config.colors.variation_down) : "";
+                      [
+                        {
+                          "value": $numVal != null ? $string($numVal) : "-",
+                          "unit_of_measure": $config.unit_of_measure,
+                          "color": $color
+                        }
+                      ]
+                    )
+                  })
+                )
+              },
+              {
+                "title": $config.variation_caption.bu.title,
+                "subtitle": $config.variation_caption.bu.subtitle,
+                "label": " ",
+                "data": $ensureArray(
+                  $map($entrySorted, function($row) {
+                    (
+                      $val := $row.ac_vs_bu;
+                      $numVal := $exists($val) and $type($val) = "number" ? $val : null;
+                      $direction := $numVal != null ? ($numVal > 0 ? $config.direction_when_positive : $config.direction_when_negative) : $config.direction_when_negative;
+                      $color := $numVal != null ? ($direction = "up" ? $config.colors.variation_up : $config.colors.variation_down) : "";
+                      [
+                        {
+                          "value": $numVal != null ? $string($numVal) : "-",
+                          "unit_of_measure": $config.unit_of_measure,
+                          "color": $color
+                        }
+                      ]
+                    )
+                  })
+                )
+              }
+            ],
+            "horizontalDashedLine": $horizontalDashedLine
+          }
+        }
+  }
+)

@@ -1,0 +1,123 @@
+a612bc7f3f735b25a5d64ed5a54aabfb
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.zwitch = zwitch;
+/**
+ * @callback Handler
+ *   Handle a value, with a certain ID field set to a certain value.
+ *   The ID field is passed to `zwitch`, and it’s value is this function’s
+ *   place on the `handlers` record.
+ * @param {...any} parameters
+ *   Arbitrary parameters passed to the zwitch.
+ *   The first will be an object with a certain ID field set to a certain value.
+ * @returns {any}
+ *   Anything!
+ */
+
+/**
+ * @callback UnknownHandler
+ *   Handle values that do have a certain ID field, but it’s set to a value
+ *   that is not listed in the `handlers` record.
+ * @param {unknown} value
+ *   An object with a certain ID field set to an unknown value.
+ * @param {...any} rest
+ *   Arbitrary parameters passed to the zwitch.
+ * @returns {any}
+ *   Anything!
+ */
+
+/**
+ * @callback InvalidHandler
+ *   Handle values that do not have a certain ID field.
+ * @param {unknown} value
+ *   Any unknown value.
+ * @param {...any} rest
+ *   Arbitrary parameters passed to the zwitch.
+ * @returns {void|null|undefined|never}
+ *   This should crash or return nothing.
+ */
+
+/**
+ * @template {InvalidHandler} [Invalid=InvalidHandler]
+ * @template {UnknownHandler} [Unknown=UnknownHandler]
+ * @template {Record<string, Handler>} [Handlers=Record<string, Handler>]
+ * @typedef Options
+ *   Configuration (required).
+ * @property {Invalid} [invalid]
+ *   Handler to use for invalid values.
+ * @property {Unknown} [unknown]
+ *   Handler to use for unknown values.
+ * @property {Handlers} [handlers]
+ *   Handlers to use.
+ */
+
+const own = {}.hasOwnProperty;
+
+/**
+ * Handle values based on a field.
+ *
+ * @template {InvalidHandler} [Invalid=InvalidHandler]
+ * @template {UnknownHandler} [Unknown=UnknownHandler]
+ * @template {Record<string, Handler>} [Handlers=Record<string, Handler>]
+ * @param {string} key
+ *   Field to switch on.
+ * @param {Options<Invalid, Unknown, Handlers>} [options]
+ *   Configuration (required).
+ * @returns {{unknown: Unknown, invalid: Invalid, handlers: Handlers, (...parameters: Parameters<Handlers[keyof Handlers]>): ReturnType<Handlers[keyof Handlers]>, (...parameters: Parameters<Unknown>): ReturnType<Unknown>}}
+ */
+function zwitch(key, options) {
+  const settings = options || {};
+
+  /**
+   * Handle one value.
+   *
+   * Based on the bound `key`, a respective handler will be called.
+   * If `value` is not an object, or doesn’t have a `key` property, the special
+   * “invalid” handler will be called.
+   * If `value` has an unknown `key`, the special “unknown” handler will be
+   * called.
+   *
+   * All arguments, and the context object, are passed through to the handler,
+   * and it’s result is returned.
+   *
+   * @this {unknown}
+   *   Any context object.
+   * @param {unknown} [value]
+   *   Any value.
+   * @param {...unknown} parameters
+   *   Arbitrary parameters passed to the zwitch.
+   * @property {Handler} invalid
+   *   Handle for values that do not have a certain ID field.
+   * @property {Handler} unknown
+   *   Handle values that do have a certain ID field, but it’s set to a value
+   *   that is not listed in the `handlers` record.
+   * @property {Handlers} handlers
+   *   Record of handlers.
+   * @returns {unknown}
+   *   Anything.
+   */
+  function one(value, ...parameters) {
+    /** @type {Handler|undefined} */
+    let fn = one.invalid;
+    const handlers = one.handlers;
+    if (value && own.call(value, key)) {
+      // @ts-expect-error Indexable.
+      const id = String(value[key]);
+      // @ts-expect-error Indexable.
+      fn = own.call(handlers, id) ? handlers[id] : one.unknown;
+    }
+    if (fn) {
+      return fn.call(this, value, ...parameters);
+    }
+  }
+  one.handlers = settings.handlers || {};
+  one.invalid = settings.invalid;
+  one.unknown = settings.unknown;
+
+  // @ts-expect-error: matches!
+  return one;
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJuYW1lcyI6WyJvd24iLCJoYXNPd25Qcm9wZXJ0eSIsInp3aXRjaCIsImtleSIsIm9wdGlvbnMiLCJzZXR0aW5ncyIsIm9uZSIsInZhbHVlIiwicGFyYW1ldGVycyIsImZuIiwiaW52YWxpZCIsImhhbmRsZXJzIiwiY2FsbCIsImlkIiwiU3RyaW5nIiwidW5rbm93biJdLCJzb3VyY2VzIjpbImluZGV4LmpzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogQGNhbGxiYWNrIEhhbmRsZXJcbiAqICAgSGFuZGxlIGEgdmFsdWUsIHdpdGggYSBjZXJ0YWluIElEIGZpZWxkIHNldCB0byBhIGNlcnRhaW4gdmFsdWUuXG4gKiAgIFRoZSBJRCBmaWVsZCBpcyBwYXNzZWQgdG8gYHp3aXRjaGAsIGFuZCBpdOKAmXMgdmFsdWUgaXMgdGhpcyBmdW5jdGlvbuKAmXNcbiAqICAgcGxhY2Ugb24gdGhlIGBoYW5kbGVyc2AgcmVjb3JkLlxuICogQHBhcmFtIHsuLi5hbnl9IHBhcmFtZXRlcnNcbiAqICAgQXJiaXRyYXJ5IHBhcmFtZXRlcnMgcGFzc2VkIHRvIHRoZSB6d2l0Y2guXG4gKiAgIFRoZSBmaXJzdCB3aWxsIGJlIGFuIG9iamVjdCB3aXRoIGEgY2VydGFpbiBJRCBmaWVsZCBzZXQgdG8gYSBjZXJ0YWluIHZhbHVlLlxuICogQHJldHVybnMge2FueX1cbiAqICAgQW55dGhpbmchXG4gKi9cblxuLyoqXG4gKiBAY2FsbGJhY2sgVW5rbm93bkhhbmRsZXJcbiAqICAgSGFuZGxlIHZhbHVlcyB0aGF0IGRvIGhhdmUgYSBjZXJ0YWluIElEIGZpZWxkLCBidXQgaXTigJlzIHNldCB0byBhIHZhbHVlXG4gKiAgIHRoYXQgaXMgbm90IGxpc3RlZCBpbiB0aGUgYGhhbmRsZXJzYCByZWNvcmQuXG4gKiBAcGFyYW0ge3Vua25vd259IHZhbHVlXG4gKiAgIEFuIG9iamVjdCB3aXRoIGEgY2VydGFpbiBJRCBmaWVsZCBzZXQgdG8gYW4gdW5rbm93biB2YWx1ZS5cbiAqIEBwYXJhbSB7Li4uYW55fSByZXN0XG4gKiAgIEFyYml0cmFyeSBwYXJhbWV0ZXJzIHBhc3NlZCB0byB0aGUgendpdGNoLlxuICogQHJldHVybnMge2FueX1cbiAqICAgQW55dGhpbmchXG4gKi9cblxuLyoqXG4gKiBAY2FsbGJhY2sgSW52YWxpZEhhbmRsZXJcbiAqICAgSGFuZGxlIHZhbHVlcyB0aGF0IGRvIG5vdCBoYXZlIGEgY2VydGFpbiBJRCBmaWVsZC5cbiAqIEBwYXJhbSB7dW5rbm93bn0gdmFsdWVcbiAqICAgQW55IHVua25vd24gdmFsdWUuXG4gKiBAcGFyYW0gey4uLmFueX0gcmVzdFxuICogICBBcmJpdHJhcnkgcGFyYW1ldGVycyBwYXNzZWQgdG8gdGhlIHp3aXRjaC5cbiAqIEByZXR1cm5zIHt2b2lkfG51bGx8dW5kZWZpbmVkfG5ldmVyfVxuICogICBUaGlzIHNob3VsZCBjcmFzaCBvciByZXR1cm4gbm90aGluZy5cbiAqL1xuXG4vKipcbiAqIEB0ZW1wbGF0ZSB7SW52YWxpZEhhbmRsZXJ9IFtJbnZhbGlkPUludmFsaWRIYW5kbGVyXVxuICogQHRlbXBsYXRlIHtVbmtub3duSGFuZGxlcn0gW1Vua25vd249VW5rbm93bkhhbmRsZXJdXG4gKiBAdGVtcGxhdGUge1JlY29yZDxzdHJpbmcsIEhhbmRsZXI+fSBbSGFuZGxlcnM9UmVjb3JkPHN0cmluZywgSGFuZGxlcj5dXG4gKiBAdHlwZWRlZiBPcHRpb25zXG4gKiAgIENvbmZpZ3VyYXRpb24gKHJlcXVpcmVkKS5cbiAqIEBwcm9wZXJ0eSB7SW52YWxpZH0gW2ludmFsaWRdXG4gKiAgIEhhbmRsZXIgdG8gdXNlIGZvciBpbnZhbGlkIHZhbHVlcy5cbiAqIEBwcm9wZXJ0eSB7VW5rbm93bn0gW3Vua25vd25dXG4gKiAgIEhhbmRsZXIgdG8gdXNlIGZvciB1bmtub3duIHZhbHVlcy5cbiAqIEBwcm9wZXJ0eSB7SGFuZGxlcnN9IFtoYW5kbGVyc11cbiAqICAgSGFuZGxlcnMgdG8gdXNlLlxuICovXG5cbmNvbnN0IG93biA9IHt9Lmhhc093blByb3BlcnR5XG5cbi8qKlxuICogSGFuZGxlIHZhbHVlcyBiYXNlZCBvbiBhIGZpZWxkLlxuICpcbiAqIEB0ZW1wbGF0ZSB7SW52YWxpZEhhbmRsZXJ9IFtJbnZhbGlkPUludmFsaWRIYW5kbGVyXVxuICogQHRlbXBsYXRlIHtVbmtub3duSGFuZGxlcn0gW1Vua25vd249VW5rbm93bkhhbmRsZXJdXG4gKiBAdGVtcGxhdGUge1JlY29yZDxzdHJpbmcsIEhhbmRsZXI+fSBbSGFuZGxlcnM9UmVjb3JkPHN0cmluZywgSGFuZGxlcj5dXG4gKiBAcGFyYW0ge3N0cmluZ30ga2V5XG4gKiAgIEZpZWxkIHRvIHN3aXRjaCBvbi5cbiAqIEBwYXJhbSB7T3B0aW9uczxJbnZhbGlkLCBVbmtub3duLCBIYW5kbGVycz59IFtvcHRpb25zXVxuICogICBDb25maWd1cmF0aW9uIChyZXF1aXJlZCkuXG4gKiBAcmV0dXJucyB7e3Vua25vd246IFVua25vd24sIGludmFsaWQ6IEludmFsaWQsIGhhbmRsZXJzOiBIYW5kbGVycywgKC4uLnBhcmFtZXRlcnM6IFBhcmFtZXRlcnM8SGFuZGxlcnNba2V5b2YgSGFuZGxlcnNdPik6IFJldHVyblR5cGU8SGFuZGxlcnNba2V5b2YgSGFuZGxlcnNdPiwgKC4uLnBhcmFtZXRlcnM6IFBhcmFtZXRlcnM8VW5rbm93bj4pOiBSZXR1cm5UeXBlPFVua25vd24+fX1cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIHp3aXRjaChrZXksIG9wdGlvbnMpIHtcbiAgY29uc3Qgc2V0dGluZ3MgPSBvcHRpb25zIHx8IHt9XG5cbiAgLyoqXG4gICAqIEhhbmRsZSBvbmUgdmFsdWUuXG4gICAqXG4gICAqIEJhc2VkIG9uIHRoZSBib3VuZCBga2V5YCwgYSByZXNwZWN0aXZlIGhhbmRsZXIgd2lsbCBiZSBjYWxsZWQuXG4gICAqIElmIGB2YWx1ZWAgaXMgbm90IGFuIG9iamVjdCwgb3IgZG9lc27igJl0IGhhdmUgYSBga2V5YCBwcm9wZXJ0eSwgdGhlIHNwZWNpYWxcbiAgICog4oCcaW52YWxpZOKAnSBoYW5kbGVyIHdpbGwgYmUgY2FsbGVkLlxuICAgKiBJZiBgdmFsdWVgIGhhcyBhbiB1bmtub3duIGBrZXlgLCB0aGUgc3BlY2lhbCDigJx1bmtub3du4oCdIGhhbmRsZXIgd2lsbCBiZVxuICAgKiBjYWxsZWQuXG4gICAqXG4gICAqIEFsbCBhcmd1bWVudHMsIGFuZCB0aGUgY29udGV4dCBvYmplY3QsIGFyZSBwYXNzZWQgdGhyb3VnaCB0byB0aGUgaGFuZGxlcixcbiAgICogYW5kIGl04oCZcyByZXN1bHQgaXMgcmV0dXJuZWQuXG4gICAqXG4gICAqIEB0aGlzIHt1bmtub3dufVxuICAgKiAgIEFueSBjb250ZXh0IG9iamVjdC5cbiAgICogQHBhcmFtIHt1bmtub3dufSBbdmFsdWVdXG4gICAqICAgQW55IHZhbHVlLlxuICAgKiBAcGFyYW0gey4uLnVua25vd259IHBhcmFtZXRlcnNcbiAgICogICBBcmJpdHJhcnkgcGFyYW1ldGVycyBwYXNzZWQgdG8gdGhlIHp3aXRjaC5cbiAgICogQHByb3BlcnR5IHtIYW5kbGVyfSBpbnZhbGlkXG4gICAqICAgSGFuZGxlIGZvciB2YWx1ZXMgdGhhdCBkbyBub3QgaGF2ZSBhIGNlcnRhaW4gSUQgZmllbGQuXG4gICAqIEBwcm9wZXJ0eSB7SGFuZGxlcn0gdW5rbm93blxuICAgKiAgIEhhbmRsZSB2YWx1ZXMgdGhhdCBkbyBoYXZlIGEgY2VydGFpbiBJRCBmaWVsZCwgYnV0IGl04oCZcyBzZXQgdG8gYSB2YWx1ZVxuICAgKiAgIHRoYXQgaXMgbm90IGxpc3RlZCBpbiB0aGUgYGhhbmRsZXJzYCByZWNvcmQuXG4gICAqIEBwcm9wZXJ0eSB7SGFuZGxlcnN9IGhhbmRsZXJzXG4gICAqICAgUmVjb3JkIG9mIGhhbmRsZXJzLlxuICAgKiBAcmV0dXJucyB7dW5rbm93bn1cbiAgICogICBBbnl0aGluZy5cbiAgICovXG4gIGZ1bmN0aW9uIG9uZSh2YWx1ZSwgLi4ucGFyYW1ldGVycykge1xuICAgIC8qKiBAdHlwZSB7SGFuZGxlcnx1bmRlZmluZWR9ICovXG4gICAgbGV0IGZuID0gb25lLmludmFsaWRcbiAgICBjb25zdCBoYW5kbGVycyA9IG9uZS5oYW5kbGVyc1xuXG4gICAgaWYgKHZhbHVlICYmIG93bi5jYWxsKHZhbHVlLCBrZXkpKSB7XG4gICAgICAvLyBAdHMtZXhwZWN0LWVycm9yIEluZGV4YWJsZS5cbiAgICAgIGNvbnN0IGlkID0gU3RyaW5nKHZhbHVlW2tleV0pXG4gICAgICAvLyBAdHMtZXhwZWN0LWVycm9yIEluZGV4YWJsZS5cbiAgICAgIGZuID0gb3duLmNhbGwoaGFuZGxlcnMsIGlkKSA/IGhhbmRsZXJzW2lkXSA6IG9uZS51bmtub3duXG4gICAgfVxuXG4gICAgaWYgKGZuKSB7XG4gICAgICByZXR1cm4gZm4uY2FsbCh0aGlzLCB2YWx1ZSwgLi4ucGFyYW1ldGVycylcbiAgICB9XG4gIH1cblxuICBvbmUuaGFuZGxlcnMgPSBzZXR0aW5ncy5oYW5kbGVycyB8fCB7fVxuICBvbmUuaW52YWxpZCA9IHNldHRpbmdzLmludmFsaWRcbiAgb25lLnVua25vd24gPSBzZXR0aW5ncy51bmtub3duXG5cbiAgLy8gQHRzLWV4cGVjdC1lcnJvcjogbWF0Y2hlcyFcbiAgcmV0dXJuIG9uZVxufVxuIl0sIm1hcHBpbmdzIjoiOzs7Ozs7QUFBQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBOztBQUVBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7O0FBRUE7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7O0FBRUE7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7O0FBRUEsTUFBTUEsR0FBRyxHQUFHLENBQUMsQ0FBQyxDQUFDQyxjQUFjOztBQUU3QjtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDTyxTQUFTQyxNQUFNQSxDQUFDQyxHQUFHLEVBQUVDLE9BQU8sRUFBRTtFQUNuQyxNQUFNQyxRQUFRLEdBQUdELE9BQU8sSUFBSSxDQUFDLENBQUM7O0VBRTlCO0FBQ0Y7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0VBQ0UsU0FBU0UsR0FBR0EsQ0FBQ0MsS0FBSyxFQUFFLEdBQUdDLFVBQVUsRUFBRTtJQUNqQztJQUNBLElBQUlDLEVBQUUsR0FBR0gsR0FBRyxDQUFDSSxPQUFPO0lBQ3BCLE1BQU1DLFFBQVEsR0FBR0wsR0FBRyxDQUFDSyxRQUFRO0lBRTdCLElBQUlKLEtBQUssSUFBSVAsR0FBRyxDQUFDWSxJQUFJLENBQUNMLEtBQUssRUFBRUosR0FBRyxDQUFDLEVBQUU7TUFDakM7TUFDQSxNQUFNVSxFQUFFLEdBQUdDLE1BQU0sQ0FBQ1AsS0FBSyxDQUFDSixHQUFHLENBQUMsQ0FBQztNQUM3QjtNQUNBTSxFQUFFLEdBQUdULEdBQUcsQ0FBQ1ksSUFBSSxDQUFDRCxRQUFRLEVBQUVFLEVBQUUsQ0FBQyxHQUFHRixRQUFRLENBQUNFLEVBQUUsQ0FBQyxHQUFHUCxHQUFHLENBQUNTLE9BQU87SUFDMUQ7SUFFQSxJQUFJTixFQUFFLEVBQUU7TUFDTixPQUFPQSxFQUFFLENBQUNHLElBQUksQ0FBQyxJQUFJLEVBQUVMLEtBQUssRUFBRSxHQUFHQyxVQUFVLENBQUM7SUFDNUM7RUFDRjtFQUVBRixHQUFHLENBQUNLLFFBQVEsR0FBR04sUUFBUSxDQUFDTSxRQUFRLElBQUksQ0FBQyxDQUFDO0VBQ3RDTCxHQUFHLENBQUNJLE9BQU8sR0FBR0wsUUFBUSxDQUFDSyxPQUFPO0VBQzlCSixHQUFHLENBQUNTLE9BQU8sR0FBR1YsUUFBUSxDQUFDVSxPQUFPOztFQUU5QjtFQUNBLE9BQU9ULEdBQUc7QUFDWiIsImlnbm9yZUxpc3QiOltdfQ==

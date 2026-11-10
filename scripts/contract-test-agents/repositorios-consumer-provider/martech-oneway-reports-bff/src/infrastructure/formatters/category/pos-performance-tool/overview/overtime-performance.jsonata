@@ -1,0 +1,109 @@
+/**
+ * 🎯 POS Tool Overview - Over Time Performance Cards
+ * 📍 Used on: Category > POS Performance Tool > Overview
+ * 🔄 Input: kpi, label_period, label_period_ly, ac, ly, ac_vs_ly, ac_vs_ly_pct, dt_end, dt_end_ly
+ * 📤 Output: BigNumberCardData[]
+ * 🔧 Config: kpi_order, kpi_to_key, kpi_titles, kpi_measure, kpi_secondary_label, kpi_comparison_type
+ */
+
+(
+  $dsKey := $keys(datasources)[0];
+  $ds := $lookup(datasources, $dsKey);
+  $rawData := $exists($ds.data) ? $ds.data : $ds;
+
+  $config := {
+    "kpi_order": ["participation_p4w", "occasions", "servings"],
+    "kpi_to_key": {
+      "participation_p4w": "participation",
+      "p4w": "participation",
+      "participation": "participation",
+      "occasions": "occasions",
+      "servings": "servings"
+    },
+    "kpi_titles": {
+      "participation_p4w": "Participation",
+      "p4w": "Participation",
+      "participation": "Participation",
+      "occasions": "Occasions",
+      "servings": "Servings"
+    },
+    "kpi_measure": {
+      "participation_p4w": "[%]",
+      "p4w": "[%]",
+      "participation": "[%]",
+      "occasions": "[#]",
+      "servings": "[%]"
+    },
+    "kpi_secondary_label": {
+      "participation_p4w": "[ % ]",
+      "p4w": "[ % ]",
+      "participation": "[ % ]",
+      "occasions": "[ # ]",
+      "servings": "[ # ]"
+    },
+    "kpi_comparison_type": {
+      "participation_p4w": "period",
+      "p4w": "period",
+      "participation": "period",
+      "occasions": "pct",
+      "servings": "pct"
+    },
+    "unit_of_measure": "%"
+  };
+
+  $getDirection := function($value) {
+    $value > 0 ? "up" : ($value < 0 ? "down" : "")
+  };
+
+  $buildCard := function($kpiName) {
+    (
+      $row := $filter($rawData, function($item) {
+        $item.kpi = $kpiName
+      })[0];
+
+      $kpiKey := $lookup($config.kpi_to_key, $kpiName);
+      $title := $row.kpi_label ? $row.kpi_label : $lookup($config.kpi_titles, $kpiName);
+      $compType := $lookup($config.kpi_comparison_type, $kpiName);
+
+      $comparison := $compType = "period"
+        ? {
+            "label": "vs",
+            "value": $exists($row.dt_end_ly) ? $formatFyPeriod($row.dt_end_ly) : "LY"
+          }
+        : {
+            "label": "vs YA",
+            "value": $exists($row.ac_vs_ly_pct)
+              ? ($row.ac_vs_ly_pct > 0 ? "+" : "") & $formatPercentValue($row.ac_vs_ly_pct)
+              : "-"
+          };
+
+      {
+        "kpiKey": $kpiKey,
+        "title": $title,
+        "dataTestId": $kpiKey,
+        "measure": $lookup($config.kpi_measure, $kpiName),
+        "period": $exists($row.dt_end) ? $formatDateToQuarter($row.dt_end) : "",
+        "data": $row ? [
+          {
+            "bigNumber": {
+              "value": $formatCompactNumber($row.ac_vs_ly),
+              "measure": $row.comp_unit_of_measure ? $row.comp_unit_of_measure : $config.unit_of_measure,
+              "trend": $getTrend($row.ac_vs_ly, $row.variationDirectionVsLy ? $row.variationDirectionVsLy : $getDirection($row.ac_vs_ly))
+            },
+            "comparison": $comparison,
+            "secondaryInfo": {
+              "value": $formatCompactNumber($row.ac),
+              "label": $lookup($config.kpi_secondary_label, $kpiName)
+            }
+          }
+        ] : []
+      }
+    )
+  };
+
+  $count($rawData) = 0
+    ? { "#empty": true }
+    : $map($config.kpi_order, function($kpiName) {
+        $buildCard($kpiName)
+      })
+)

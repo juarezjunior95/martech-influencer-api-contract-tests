@@ -1,0 +1,427 @@
+/**
+ * BRAND ANALYSIS BRAND POWER TREND BARS FORMATTER (BFF)
+ * Shared formatter for KPIs that follow the standard 3-series pattern (quarterly / ytd / yearly):
+ * salience, dynamic, affinity, meet-needs, difference.
+ * Resolves the active KPI by matching the datasource keys against the expected suffixes
+ * (_per-year-qtr, _per-year, _per-year-full).
+ */
+(
+  $rawDatasources := $exists(datasources)
+    ? datasources
+    : (
+      $exists(components) and $count(components) > 0 and $exists(components[0].data.datasources)
+        ? components[0].data.datasources
+        : {}
+    );
+
+  $toNumber := function($value) {
+    $type($value) = "number"
+      ? $value
+      : (
+        $type($value) = "string" and $match($trim($value), /^[-+]?[0-9]*[.]?[0-9]+$/)
+          ? $number($trim($value))
+          : undefined
+      )
+  };
+
+  $getDirection := function($comparison) {
+    (
+      $val := $toNumber($comparison);
+      $exists($val) ? ($val >= 0 ? "up" : "down") : "down"
+    )
+  };
+
+  $yearShort := function($year) {
+    $substring($string($year), 2, 2)
+  };
+
+  $quarterYearFormatted := function($quarter, $year, $fallback) {
+    $exists($quarter) and $exists($year)
+      ? $string($quarter) & "'" & $yearShort($year)
+      : $fallback
+  };
+
+  $resolveBrandKey := function($item) {
+    $exists($item.sub_brand)
+      ? $item.sub_brand
+      : (
+        $exists($item.raw_brand)
+          ? $item.raw_brand
+          : ($exists($item.level_3) ? $item.level_3 : $item.sub_brand)
+      )
+  };
+
+  $allKeys := $keys($rawDatasources);
+  $pickFirst := function($pattern) {
+    ($filter($allKeys, function($k) { $exists($match($k, $pattern)) }))[0]
+  };
+  $qtrKey := $pickFirst(/_per-year-qtr$/);
+  $fullKey := $pickFirst(/_per-year-full$/);
+  $ytdKey := $pickFirst(/_per-year$/);
+
+  $quarterlySource := $exists($qtrKey) ? $lookup($rawDatasources, $qtrKey) : undefined;
+  $yearlySource := $exists($fullKey) ? $lookup($rawDatasources, $fullKey) : undefined;
+  $ytdSource := $exists($ytdKey) ? $lookup($rawDatasources, $ytdKey) : undefined;
+
+  $normalizeQuarterly := function($item) {
+    (
+      $year := $toNumber($item.year);
+      $quarter := $item.quarter;
+      $comparison := $exists($item.ac_vs_ly) ? $item.ac_vs_ly : $item.comparison;
+      $fallbackQy := $item.quarter_year_formatted;
+
+      {
+        "ac": $toNumber($item.ac),
+        "comparison": $toNumber($comparison),
+        "variation_direction": $exists($item.variation_direction) ? $item.variation_direction : $getDirection($comparison),
+        "quarter_year_formatted": $quarterYearFormatted($quarter, $year, $fallbackQy),
+        "year": $year,
+        "brand_key": $resolveBrandKey($item)
+      }
+    )
+  };
+
+  $normalizeYtd := function($item) {
+    (
+      $comparison := $exists($item.ac_vs_ly) ? $item.ac_vs_ly : $item.comparison;
+
+      {
+        "ac": $toNumber($item.ac),
+        "comparison": $toNumber($comparison),
+        "variation_direction": $exists($item.variation_direction) ? $item.variation_direction : $getDirection($comparison),
+        "year": $toNumber(
+          $exists($item.year_value)
+            ? $item.year_value
+            : ($item.year)
+        ),
+        "brand_key": $resolveBrandKey($item)
+      }
+    )
+  };
+
+  $normalizeYearly := function($item) {
+    (
+      $comparison := $exists($item.ac_vs_ly) ? $item.ac_vs_ly : $item.comparison;
+
+      {
+        "ac": $toNumber($item.ac),
+        "comparison": $toNumber($comparison),
+        "variation_direction": $exists($item.variation_direction) ? $item.variation_direction : $getDirection($comparison),
+        "year": $toNumber(
+          $exists($item.year_value)
+            ? $item.year_value
+            : (
+              $exists($item.year_ini)
+                ? $item.year_ini
+                : ($item.year)
+            )
+        ),
+        "brand_key": $resolveBrandKey($item)
+      }
+    )
+  };
+
+  $dsQuarterly := $map($ensureArray($quarterlySource), $normalizeQuarterly);
+  $dsYtd := $map($ensureArray($ytdSource), $normalizeYtd);
+  $dsYearly := $map($ensureArray($yearlySource), $normalizeYearly);
+
+  $config := {
+    "background_color": {
+      "bars": "#e8d19d",
+      "bars_dark": "#d1a33c",
+      "bars_comp": "#a0aeb7",
+      "bars_comp_dark": "#7b919d"
+    },
+    "unit_measure": {
+      "points_percent": "pp"
+    }
+  };
+
+  $unitMeasure := $config.unit_measure.points_percent;
+  $colorBars := $config.background_color.bars;
+  $colorBarsDark := $config.background_color.bars_dark;
+  $colorBarsComp := $config.background_color.bars_comp;
+  $colorBarsCompDark := $config.background_color.bars_comp_dark;
+
+  $isEmpty := $count($dsQuarterly) = 0 and $count($dsYtd) = 0 and $count($dsYearly) = 0;
+
+  $filterEven := function($array) {
+    $map($array, function($item, $index) { $index % 2 = 0 ? $item })[$exists($)]
+  };
+  $filterOdd := function($array) {
+    $map($array, function($item, $index) { $index % 2 != 0 ? $item })[$exists($)]
+  };
+
+  $allBrandKeys := $distinct(
+    $filter(
+      $append($append($dsQuarterly.brand_key, $dsYtd.brand_key), $dsYearly.brand_key),
+      function($v) { $exists($v) and $trim($string($v)) != "" and $lowercase($trim($string($v))) != "all" and $lowercase($trim($string($v))) != "n/a" }
+    )
+  );
+
+  $hasCompetitorPairs :=
+    $count($dsQuarterly) > 1 and $count($dsYtd) > 1 and $count($dsYearly) > 1 and
+    $count($dsQuarterly) % 2 = 0 and $count($dsYtd) % 2 = 0 and $count($dsYearly) % 2 = 0;
+
+  $isCompetitor := $count($allBrandKeys) > 1 and $hasCompetitorPairs;
+
+  $isEmpty
+    ? { "empty": true }
+    : (
+      $isCompetitor
+        ? (
+          $yearMinQuarterly := $min($dsQuarterly.year);
+          $yearMaxQuarterly := $max($dsQuarterly.year);
+          $yearMinYearly := $min($dsYearly.year);
+          $yearMaxYearly := $max($dsYearly.year);
+
+          $quarterEven := $filterEven($dsQuarterly);
+          $quarterOdd := $filterOdd($dsQuarterly);
+          $ytdEven := $filterEven($dsYtd);
+          $ytdOdd := $filterOdd($dsYtd);
+          $yearEven := $filterEven($dsYearly);
+          $yearOdd := $filterOdd($dsYearly);
+
+          {
+            "kpiData": {
+              "quarterly": {
+                "datasets": [
+                  {
+                    "type": "bar",
+                    "data": $map($quarterEven, function($v) { $v.ac }),
+                    "backgroundColor": $map($quarterEven, function($v) {
+                      $v.year = $yearMaxQuarterly ? $colorBarsDark : $colorBars
+                    })
+                  },
+                  {
+                    "type": "bar",
+                    "data": $map($quarterOdd, function($v) { $v.ac }),
+                    "backgroundColor": $map($quarterOdd, function($v) {
+                      $v.year = $yearMaxQuarterly ? $colorBarsCompDark : $colorBarsComp
+                    })
+                  }
+                ],
+                "labels": $quarterEven.quarter_year_formatted,
+                "variation_caption": {
+                  "title": "Comparison",
+                  "subtitle": "Vs LY [ " & $yearMinQuarterly & " - " & $yearMaxQuarterly & " ]",
+                  "variationsRows": {
+                    "kpi": {
+                      "data": $map($quarterEven, function($v, $index) {
+                        {
+                          "variationsGroup": [
+                            {
+                              "variation": $string($v.comparison),
+                              "direction": $v.variation_direction,
+                              "unit_of_measure": $unitMeasure
+                            },
+                            {
+                              "variation": $string($quarterOdd[$index].comparison),
+                              "direction": $quarterOdd[$index].variation_direction,
+                              "unit_of_measure": $unitMeasure
+                            }
+                          ]
+                        }
+                      })
+                    }
+                  }
+                },
+                "paddingTop": 20
+              },
+              "ytd": {
+                "datasets": [
+                  {
+                    "type": "bar",
+                    "data": $map($ytdEven, function($v) { $v.ac }),
+                    "backgroundColor": $map($ytdEven, function($v, $index) {
+                      $index = ($count($ytdEven) - 1) ? $colorBarsDark : $colorBars
+                    })
+                  },
+                  {
+                    "type": "bar",
+                    "data": $map($ytdOdd, function($v) { $v.ac }),
+                    "backgroundColor": $map($ytdOdd, function($v, $index) {
+                      $index = ($count($ytdOdd) - 1) ? $colorBarsCompDark : $colorBarsComp
+                    })
+                  }
+                ],
+                "labels": $ytdEven.year,
+                "variation_caption": {
+                  "title": "YTD",
+                  "subtitle": "",
+                  "variationsRows": {
+                    "kpi": {
+                      "data": $map($ytdEven, function($v, $index) {
+                        {
+                          "variationsGroup": [
+                            {
+                              "variation": $string($v.comparison),
+                              "direction": $v.variation_direction,
+                              "unit_of_measure": $unitMeasure
+                            },
+                            {
+                              "variation": $string($ytdOdd[$index].comparison),
+                              "direction": $ytdOdd[$index].variation_direction,
+                              "unit_of_measure": $unitMeasure
+                            }
+                          ]
+                        }
+                      })
+                    }
+                  }
+                },
+                "paddingTop": 20
+              },
+              "yearly": $count($yearEven) = 0 or $count($yearOdd) = 0
+                ? { "empty": true }
+                : {
+                  "datasets": [
+                    {
+                      "type": "bar",
+                      "data": $map($yearEven, function($v) { $v.ac }),
+                      "backgroundColor": $map($yearEven, function($v) { $colorBars })
+                    },
+                    {
+                      "type": "bar",
+                      "data": $map($yearOdd, function($v) { $v.ac }),
+                      "backgroundColor": $map($yearOdd, function($v) { $colorBarsComp })
+                    }
+                  ],
+                  "labels": $yearEven.year,
+                  "variation_caption": {
+                    "title": "Comparison",
+                    "subtitle": "Vs LY [ " & $yearMinYearly & " - " & $yearMaxYearly & " ]",
+                    "variationsRows": {
+                      "kpi": {
+                        "data": $map($yearEven, function($v, $index) {
+                          {
+                            "variationsGroup": [
+                              {
+                                "variation": $string($v.comparison),
+                                "direction": $v.variation_direction,
+                                "unit_of_measure": $unitMeasure
+                              },
+                              {
+                                "variation": $string($yearOdd[$index].comparison),
+                                "direction": $yearOdd[$index].variation_direction,
+                                "unit_of_measure": $unitMeasure
+                              }
+                            ]
+                          }
+                        })
+                      }
+                    }
+                  },
+                  "paddingTop": 20
+                }
+            }
+          }
+        )
+        : (
+          $yearMinQuarterly := $min($dsQuarterly.year);
+          $yearMaxQuarterly := $max($dsQuarterly.year);
+          $yearMinYearly := $min($dsYearly.year);
+          $yearMaxYearly := $max($dsYearly.year);
+          $maxYearYtd := $max($dsYtd.year);
+
+          {
+            "kpiData": {
+              "quarterly": {
+                "datasets": [
+                  {
+                    "type": "bar",
+                    "data": $map($dsQuarterly, function($v) { $v.ac }),
+                    "backgroundColor": $map($dsQuarterly, function($v) { $colorBars })
+                  }
+                ],
+                "labels": $dsQuarterly.quarter_year_formatted,
+                "variation_caption": {
+                  "title": "Comparison",
+                  "subtitle": "Vs LY [ " & $yearMinQuarterly & " - " & $yearMaxQuarterly & " ]",
+                  "variationsRows": {
+                    "kpi": {
+                      "data": $map($dsQuarterly, function($v) {
+                        {
+                          "variationsGroup": [
+                            {
+                              "variation": $string($v.comparison),
+                              "direction": $v.variation_direction,
+                              "unit_of_measure": $unitMeasure
+                            }
+                          ]
+                        }
+                      })
+                    }
+                  }
+                },
+                "paddingTop": 20
+              },
+              "ytd": {
+                "datasets": [
+                  {
+                    "type": "bar",
+                    "data": $map($dsYtd, function($v) { $v.ac }),
+                    "backgroundColor": $map($dsYtd, function($v, $index) {
+                      $index = ($count($dsYtd) - 1) or $v.year = $maxYearYtd ? $colorBarsDark : $colorBars
+                    })
+                  }
+                ],
+                "labels": $dsYtd.year,
+                "variation_caption": {
+                  "title": "YTD",
+                  "subtitle": "",
+                  "variationsRows": {
+                    "kpi": {
+                      "data": $map($dsYtd, function($v) {
+                        {
+                          "variationsGroup": [
+                            {
+                              "variation": $string($v.comparison),
+                              "direction": $v.variation_direction,
+                              "unit_of_measure": $unitMeasure
+                            }
+                          ]
+                        }
+                      })
+                    }
+                  }
+                },
+                "paddingTop": 20
+              },
+              "yearly": $count($dsYearly) = 0
+                ? { "empty": true }
+                : {
+                  "datasets": [
+                    {
+                      "type": "bar",
+                      "data": $map($dsYearly, function($v) { $v.ac }),
+                      "backgroundColor": $map($dsYearly, function($v) { $colorBars })
+                    }
+                  ],
+                  "labels": $dsYearly.year,
+                  "variation_caption": {
+                    "title": "Comparison",
+                    "subtitle": "Vs LY [ " & $yearMinYearly & " - " & $yearMaxYearly & " ]",
+                    "variationsRows": {
+                      "kpi": {
+                        "data": $map($dsYearly, function($v) {
+                          {
+                            "variationsGroup": [
+                              {
+                                "variation": $string($v.comparison),
+                                "direction": $v.variation_direction,
+                                "unit_of_measure": $unitMeasure
+                              }
+                            ]
+                          }
+                        })
+                      }
+                    }
+                  },
+                  "paddingTop": 20
+                }
+            }
+          }
+        )
+    )
+)

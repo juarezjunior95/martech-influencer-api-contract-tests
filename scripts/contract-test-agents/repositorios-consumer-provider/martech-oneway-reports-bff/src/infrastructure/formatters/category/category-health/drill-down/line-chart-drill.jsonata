@@ -1,0 +1,213 @@
+/**
+ * 🎯 Component: Category Health Drill-Down Line Chart
+ * 📍 Used on: Category > Category Health > Drill Down > Line Chart
+ * 🔄 Input: category_category-health_drill-down_line-chart-drill
+ * 📤 Output: TimeSeriesChartData | DriversData | ShareOfThroatData
+ */
+(
+  $config := {
+    "chart_key_by_category": {
+      "Beer": { "volume": "beerVolume", "icl": "beerIcl", "participation": "beerParticipation", "wmtbb": "wmtbb" },
+      "Beyond Beer": { "volume": "beyondBeerVolume", "icl": "beyondBeerIcl", "participation": "beyondBeerParticipation", "wmtbb": null },
+      "Beer + Beyond Beer": { "volume": "beerBeyondBeerVolume", "icl": "beerBeyondBeerIcl", "participation": "beerBeyondBeerParticipation", "wmtbb": null }
+    },
+    "chart_labels": {
+      "Beer": {
+        "volume": { "title": "Beer Volume Performance", "chartTitle": "Beer Volume Overtime", "chartLabel": "Beer Volume", "unit": "k hl" },
+        "icl": { "title": "BICL Performance", "chartTitle": "BICL Overtime", "chartLabel": "BICL", "unit": "L/Year" },
+        "participation": { "title": "Beer Participation Performance", "chartTitle": "Beer Participation Overtime", "chartLabel": "Beer Participation", "unit": "%" },
+        "wmtbb": { "title": "WMTBB Performance", "chartTitle": "WMTBB Overtime", "chartLabel": "WMTBB", "unit": "%" }
+      },
+      "Beyond Beer": {
+        "volume": { "title": "Beyond Beer Volume Performance", "chartTitle": "Beyond Beer Volume Overtime", "chartLabel": "BYB Volume", "unit": "k hl" },
+        "icl": { "title": "BYB ICL Performance", "chartTitle": "BYB ICL Overtime", "chartLabel": "BYB ICL", "unit": "L/Year" },
+        "participation": { "title": "BYB Participation Performance", "chartTitle": "BYB Participation Overtime", "chartLabel": "BYB Participation", "unit": "%" },
+        "wmtbb": null
+      },
+      "Beer + Beyond Beer": {
+        "volume": { "title": "Beer + Beyond Beer Volume Performance", "chartTitle": "Beer + Beyond Beer Volume Overtime", "chartLabel": "B+BYB Volume", "unit": "k hl" },
+        "icl": { "title": "Beer + BYB ICL Performance", "chartTitle": "Beer + BYB ICL Overtime", "chartLabel": "B+BYB ICL", "unit": "L/Year" },
+        "participation": { "title": "Beer + BYB Participation Performance", "chartTitle": "Beer + BYB Participation Overtime", "chartLabel": "B+BYB Participation", "unit": "%" },
+        "wmtbb": null
+      }
+    },
+    "icl_label_by_category": { "Beer": "BICL", "Beyond Beer": "BYB ICL", "Beer + Beyond Beer": "B+BYB ICL" },
+    "comparison_title": "vs LY",
+    "color_positive": "#007800",
+    "color_negative": "#C80000",
+    "color_neutral": "#5C5C5C",
+    "sot_color_map": {
+      "Beer": { "color": "#EFD328", "connector": "#F0DF78" },
+      "Beyond Beer": { "color": "#D9AA4A", "connector": "#EEC879" },
+      "Spirits": { "color": "#69ACE3", "connector": "#A1CFF4" },
+      "Wine": { "color": "#EC8AB0", "connector": "#F6B7D0" },
+      "Beer + Beyond Beer": { "color": "#EFD328", "connector": "#F0DF78" }
+    }
+  };
+
+  $dsKey := $keys(datasources)[0];
+  $ds := $lookup(datasources, $dsKey);
+  $rawData := $exists($ds.data) ? $ds.data : $ds;
+
+  $count($rawData) = 0 ? { "empty": true } : (
+    $category := ($filter($rawData, function($r) { $exists($r.category) and $r.category != "N/A" }))[0].category;
+    $hasKpi := function($k) { $count($filter($rawData, function($r) { $r.kpi_name = $k })) > 0 };
+    $isVolume := $hasKpi("cat_health_volume");
+        $isIcl := $hasKpi("cat_health_icl") and $not($hasKpi("cat_health_volume"));
+    $isParticipation := $hasKpi("p4w");
+    $isWmtbb := $hasKpi("wmtbb");
+    $isSot := $hasKpi("cat_health_sot");
+    $hasDrivers := $hasKpi("lda_size") and $hasKpi("cat_health_icl");
+
+    $getComparisonColor := function($v) {
+      $not($exists($v)) or $v = null ? $config.color_neutral : ($v > 0 ? $config.color_positive : ($v < 0 ? $config.color_negative : $config.color_neutral))
+    };
+
+    $yearFromDtEnd := function($dt) { $substring($string($dt), 0, 4) };
+
+    $rowsForKpi := function($kpi) { $filter($rawData, function($r) { $r.kpi_name = $kpi }) };
+
+    $buildTimeSeriesChartData := function($rows, $chartType) { (
+      $sorted := $sort($rows, function($a, $b) { $a.dt_end > $b.dt_end });
+      $labelsConfig := $lookup($lookup($config.chart_labels, $category), $chartType);
+      {
+        "title": $labelsConfig.title,
+        "chartTitle": $labelsConfig.chartTitle,
+        "chartLabel": $labelsConfig.chartLabel,
+        "unit": $labelsConfig.unit,
+        "comparisonTitle": $config.comparison_title,
+        "labels": $map($sorted, function($r) { $yearFromDtEnd($r.dt_end) }),
+        "values": $map($sorted, function($r) { $r.ac }),
+        "formattedValues": $map($sorted, function($r) {
+          ($chartType = "volume" ? $formatCompactNumber($r.ac) : $formatValue($r.ac)) & ($chartType = "participation" and $exists($r.unit_of_measure) and $r.unit_of_measure != "" ? " " & $r.unit_of_measure : "")
+        }),
+        "comparisonData": $append(
+          [{ "value": "-", "measure": "", "color": $config.color_neutral }],
+          $map($filter($sorted, function($r, $i) { $i > 0 }), function($r) {
+            {
+              "value": $exists($r.ac_vs_ly) and $r.ac_vs_ly != null ? $formatValue($r.ac_vs_ly) : "-",
+              "measure": $exists($r.ac_vs_ly) and $r.ac_vs_ly != null ? ($chartType = "wmtbb" ? "" : ($exists($r.comp_unit_of_measure) ? $r.comp_unit_of_measure : "%")) : "",
+              "color": $getComparisonColor($r.ac_vs_ly)
+            }
+          })
+        )
+      }
+    ) };
+
+    $buildDriversData := function() { (
+      $popRows := $sort($rowsForKpi("lda_size"), function($a, $b) { $a.dt_end > $b.dt_end });
+      $iclRows := $sort($rowsForKpi("cat_health_icl"), function($a, $b) { $a.dt_end > $b.dt_end });
+      $iclLabel := $lookup($config.icl_label_by_category, $category);
+      {
+        "title": "Drivers",
+        "chartTitle": "Population & " & $iclLabel & " Overtime",
+        "populationUnit": "# and L/Year",
+        "populationLabel": "Population",
+        "iclLabel": $iclLabel,
+        "populationComparisonTitle": "Population vs LY",
+        "iclComparisonTitle": $iclLabel & " vs LY",
+        "labels": $map($popRows, function($r) { $yearFromDtEnd($r.dt_end) }),
+        "populationValues": $map($popRows, function($r) { $r.ac }),
+        "iclValues": $map($iclRows, function($r) { $r.ac }),
+        "populationFormattedValues": $map($popRows, function($r) { $formatCompactNumber($r.ac) }),
+        "iclFormattedValues": $map($iclRows, function($r) { $formatCompactNumber($r.ac) }),
+        "populationComparisonData": $append(
+          [{ "value": "-", "measure": "", "color": $config.color_neutral }],
+          $map($filter($popRows, function($r, $i) { $i > 0 }), function($r) {
+            {
+              "value": $exists($r.ac_vs_ly) and $r.ac_vs_ly != null ? $formatCompactNumber($r.ac_vs_ly) : "-",
+              "measure": $exists($r.ac_vs_ly) and $r.ac_vs_ly != null ? "%" : "",
+              "color": $getComparisonColor($r.ac_vs_ly)
+            }
+          })
+        ),
+        "iclComparisonData": $append(
+          [{ "value": "-", "measure": "", "color": $config.color_neutral }],
+          $map($filter($iclRows, function($r, $i) { $i > 0 }), function($r) {
+            {
+              "value": $exists($r.ac_vs_ly) and $r.ac_vs_ly != null ? $formatCompactNumber($r.ac_vs_ly) : "-",
+              "measure": $exists($r.ac_vs_ly) and $r.ac_vs_ly != null ? "%" : "",
+              "color": $getComparisonColor($r.ac_vs_ly)
+            }
+          })
+        )
+      }
+    ) };
+
+    $buildShareOfThroatData := function() { (
+      $sotRows := $rawData[kpi_name = "cat_health_sot"];
+      $years := $sort($distinct($map($sotRows, function($r) { $yearFromDtEnd($r.dt_end) })));
+      $categoryOrder := $category = "Beer + Beyond Beer"
+        ? ["Beer + Beyond Beer", "Spirits", "Wine"]
+        : ["Beer", "Beyond Beer", "Spirits", "Wine"];
+      $categories := $filter($categoryOrder, function($cat) {
+        $count($filter($sotRows, function($r) { $r.category = $cat })) > 0
+      });
+      $sotColors := $map($categories, function($cat) { $lookup($config.sot_color_map, $cat).color });
+      $sotConnectors := $map($categories, function($cat) { $lookup($config.sot_color_map, $cat).connector });
+      {
+        "title": "Share of Throat",
+        "subtitle": "[%]",
+        "chartData": {
+          "columns": $map($years, function($year) {
+            (
+              $yearRows := $filter($sotRows, function($r) { $yearFromDtEnd($r.dt_end) = $year });
+              {
+                "label": $year,
+                "segments": $map($categories, function($cat) {
+                  (
+                    $catRow := ($filter($yearRows, function($r) { $r.category = $cat }))[0];
+                    { "value": $exists($catRow) ? $formatNumber($catRow.ac, "0.0") : $formatNumber(0, "0.0") }
+                  )
+                })
+              }
+            )
+          }),
+          "colors": $sotColors,
+          "connectorColors": $sotConnectors,
+          "legends": $categories,
+          "comparisonLine": $map($categories, function($cat) {
+            (
+              $catRows := $sort($filter($sotRows, function($r) { $r.category = $cat }), function($a, $b) { $a.dt_end > $b.dt_end });
+              {
+                "title": $cat & " vs LY",
+                "data": $map($years, function($year, $yearIdx) {
+                  (
+                    $row := ($filter($catRows, function($r) { $yearFromDtEnd($r.dt_end) = $year }))[0];
+                    $yearIdx = 0
+                      ? { "value": "-", "measure": "", "color": $config.color_neutral }
+                      : {
+                          "value": $exists($row) and $exists($row.ac_vs_ly) and $row.ac_vs_ly != null ? $formatValue($row.ac_vs_ly) : "-",
+                          "measure": $exists($row) and $exists($row.ac_vs_ly) and $row.ac_vs_ly != null ? ($exists($row.comp_unit_of_measure) ? $row.comp_unit_of_measure : "pp") : "",
+                          "color": $getComparisonColor($exists($row) ? $row.ac_vs_ly : null)
+                        }
+                  )
+                })
+              }
+            )
+          })
+        }
+      }
+    ) };
+
+    $volumeKey := $lookup($lookup($config.chart_key_by_category, $category), "volume");
+    $iclKey := $lookup($lookup($config.chart_key_by_category, $category), "icl");
+    $partKey := $lookup($lookup($config.chart_key_by_category, $category), "participation");
+    $wmtbbKey := $lookup($lookup($config.chart_key_by_category, $category), "wmtbb");
+
+    $isVolume
+      ? $merge([
+          $volumeKey != null ? { ($volumeKey): $buildTimeSeriesChartData($rowsForKpi("cat_health_volume"), "volume") } : {},
+          $hasDrivers ? { "drivers": $buildDriversData() } : {}
+        ])
+      : $isIcl
+        ? ($iclKey != null ? { ($iclKey): $buildTimeSeriesChartData($rowsForKpi("cat_health_icl"), "icl") } : {})
+        : $isParticipation
+          ? ($partKey != null ? { ($partKey): $buildTimeSeriesChartData($rowsForKpi("p4w"), "participation") } : {})
+          : $isWmtbb
+            ? ($wmtbbKey != null ? { ($wmtbbKey): $buildTimeSeriesChartData($rowsForKpi("wmtbb"), "wmtbb") } : {})
+            : $isSot
+              ? { "shareOfThroat": $buildShareOfThroatData() }
+              : {}
+  )
+)

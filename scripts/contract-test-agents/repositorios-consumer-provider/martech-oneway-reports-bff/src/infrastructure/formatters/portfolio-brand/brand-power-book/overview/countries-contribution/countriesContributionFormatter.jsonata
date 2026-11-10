@@ -1,0 +1,176 @@
+/**
+ * 🌊 COUNTRIES CONTRIBUTION (WATERFALL) FORMATTER
+ * 🎯 Component: countriesContribution
+ * 📍 Used on: Brand Power Book > Overview > Top countries contribution
+ * 🔄 Input: portfolio-brand_brand-power-book_overview_top-countries-contribution_countries-contribution
+ * 📤 Output: { data, labels, variationCaptions } na raiz — o pipeline junta ao id do componente
+ * 🔧 Helpers MCP: formatValue, formatDateToQuarter, formatLyQuarter
+ */
+(
+  $dsKey := $keys(datasources)[0];
+  $rows := $lookup(datasources, $dsKey);
+
+  $config := {
+    "neutralColor": "#141414",
+    "vsLyColors": { "up": "#49764B", "down": "#A20A0A" }
+  };
+
+  $emptyCaption := {
+    "value": "",
+    "unit_of_measure": "",
+    "color": $config.neutralColor
+  };
+
+  $isNumber := function($value) {
+    $type($value) = "number" and $value != null
+  };
+
+  $pondForRow := function($countryRow) {
+    $isNumber($countryRow.ac_vs_ly_pond) ? $countryRow.ac_vs_ly_pond : 0
+  };
+
+  /* Half-down to 1 casa decimal (mesma regra do contrato UI para % e pp) */
+  $roundHalfDownOneDecimal := function($value) {
+    $not($isNumber($value))
+      ? null
+      : (
+        $tenths := $value * 10;
+        $floorT := $floor($tenths);
+        $frac := $tenths - $floorT;
+        $roundedTenths := $frac < 0.5 ? $floorT : ($frac > 0.5 ? $ceil($tenths) : $floorT);
+        $roundedTenths / 10
+      )
+  };
+
+  $formatCaptionOneDecimal := function($value) {
+    $not($isNumber($value))
+      ? "-"
+      : $formatValue($roundHalfDownOneDecimal($value))
+  };
+
+  $vsLyColor := function($countryRow) {
+    $countryRow.ac_vs_ly = 0
+      ? $config.vsLyColors.down
+      : (
+        $exists($lookup($config.vsLyColors, $countryRow.variationDirectionVsLy))
+          ? $lookup($config.vsLyColors, $countryRow.variationDirectionVsLy)
+          : $config.neutralColor
+      )
+  };
+
+  $nrCaption := function($countryRow) {
+    $isNumber($countryRow.nr_contribution)
+      ? {
+          "value": $string($round($countryRow.nr_contribution, 0)),
+          "unit_of_measure": "%",
+          "color": $config.neutralColor
+        }
+      : $emptyCaption
+  };
+
+  $count($rows) = 0 or $not($exists($filter($rows, function($row) { $row.country_iso_code_3 = "ABI" })[0]))
+    ? { "empty": true }
+    : (
+      $abiRow := $filter($rows, function($row) { $row.country_iso_code_3 = "ABI" })[0];
+      $countryRows := $filter($rows, function($row) { $row.country_iso_code_3 != "ABI" });
+      $orderedCountries := $sort(
+        $countryRows,
+        function($leftRow, $rightRow) {
+          (
+            $leftRank := $leftRow.rank = null ? 999 : $number($leftRow.rank);
+            $rightRank := $rightRow.rank = null ? 999 : $number($rightRow.rank);
+            $leftRank > $rightRank
+          )
+        }
+      );
+
+      $quarterCurrent := $formatDateToQuarter($abiRow.dt_end);
+      $quarterLy := $formatLyQuarter($abiRow.dt_end);
+      $abiImage := $abiRow.country.imageIcon;
+
+      $waterfallValues := $append(
+        $append([$abiRow.ly], $map($orderedCountries, function($countryRow) { $pondForRow($countryRow) })),
+        [$abiRow.ac]
+      );
+
+      $labelItems := $append(
+        $append(
+          [{ "value": $quarterLy, "image": $abiImage }],
+          $map(
+            $orderedCountries,
+            function($countryRow) {
+              {
+                "value": $countryRow.country_iso_code_3,
+                "image": $countryRow.country.imageIcon
+              }
+            }
+          )
+        ),
+        [{ "value": $quarterCurrent, "image": $abiImage }]
+      );
+
+      $absolutePowerBlock := {
+        "title": "Absolute Power",
+        "subtitle": "[" & $quarterCurrent & "]",
+        "data": $append(
+          [$emptyCaption],
+          $append(
+            $map(
+              $orderedCountries,
+              function($countryRow) {
+                {
+                  "value": $formatCaptionOneDecimal($countryRow.ac),
+                  "unit_of_measure": "%",
+                  "color": $config.neutralColor
+                }
+              }
+            ),
+            [$emptyCaption]
+          )
+        )
+      };
+
+      $comparisonVsLyBlock := {
+        "title": "Comparison vs LY",
+        "subtitle": "[" & $quarterLy & "]",
+        "data": $append(
+          [$emptyCaption],
+          $append(
+            $map(
+              $orderedCountries,
+              function($countryRow) {
+                {
+                  "value": $formatCaptionOneDecimal($countryRow.ac_vs_ly),
+                  "unit_of_measure": "pp",
+                  "color": $vsLyColor($countryRow)
+                }
+              }
+            ),
+            [$emptyCaption]
+          )
+        )
+      };
+
+      $nrContributionBlock := {
+        "title": "NR Contribution",
+        "subtitle": "[" & $quarterCurrent & "]",
+        "data": $append(
+          [$emptyCaption],
+          $append(
+            $map($orderedCountries, function($countryRow) { $nrCaption($countryRow) }),
+            [$emptyCaption]
+          )
+        )
+      };
+
+      {
+        "data": $waterfallValues,
+        "labels": $labelItems,
+        "variationCaptions": [
+          $absolutePowerBlock,
+          $comparisonVsLyBlock,
+          $nrContributionBlock
+        ]
+      }
+    )
+)

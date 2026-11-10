@@ -1,0 +1,37 @@
+/**
+ * Trade Execution home formatter
+ * Component: big number
+ * Used on: Trade Execution > Home
+ */
+(
+  $datasourceKeys := $keys(datasources);
+  $datasource := $lookup(datasources, $datasourceKeys[0]);
+
+  $sortedByDate := $sort($datasource, function($a, $b) { $a.dt_end > $b.dt_end });
+  $yearValues := $sortedByDate[-1];
+
+  /* Exclude last item if it duplicates the previous entry (same dt_ini and dt_end) */
+  $secondToLast := $sortedByDate[-2];
+  $excludeLast := $yearValues.dt_ini = $secondToLast.dt_ini and $yearValues.dt_end = $secondToLast.dt_end;
+  $monthlyValues := $excludeLast ? $sortedByDate[[0..$count($sortedByDate)-2]] : $sortedByDate;
+
+  $segmentType := $lowercase($datasource[0].segment);
+  $isMegabrand := $contains($segmentType, "mega");
+
+  {
+    "chartTitle": $isMegabrand ? "Total Megabrands Distribution" : "Total Distribution",
+    "chartPeriod": $yearValues.refreshMonthLabel & " - YTD",
+    "bigNumberData": [
+      {
+        "bigNumber": {
+          "value": $type($yearValues.ac_vs_ly) = "number" ? ($yearValues.ac_vs_ly = $floor($yearValues.ac_vs_ly) ? $string($floor($yearValues.ac_vs_ly)) & ".0" : $string($yearValues.ac_vs_ly)) : "-",
+          "measure": $yearValues.comp_unit_of_measure,
+          "trend": $yearValues.variationDirectionVsLy = "up" ? "positive" : "negative"
+        },
+        "comparison": { "label": "vs", "value": "LY" },
+        "secondaryInfo": { "label": "[ Mio ]", "value": $yearValues.ac }
+      }
+    ],
+    "chartLineData": [$monthlyValues.ac]
+  }
+)

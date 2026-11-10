@@ -1,0 +1,181 @@
+/* *
+ * Bees Distribution Overview Formatter
+ * Component: Bar Chart + Line Chart + Card
+ * Used on: Trade Execution > Bees Distribution
+ */
+(
+  $datasourceKeys := $keys(datasources);
+  $datasource := $lookup(datasources, $datasourceKeys[0]);
+
+  $barChartData := $datasource[id = 'bar-chart'];
+  $lineChartData := $datasource[id = 'line-chart'];
+  $cardChartData := $datasource[id = 'card-chart'];
+
+  /* Colors */
+  $COLORS := {
+    "rgba": ['rgba(237, 218, 177, 1)', 'rgba(209, 163, 60, 1)', 'rgba(184, 134, 11, 1)'],
+    "hex": ['#EDDAB1', '#D1A33C', '#B8860B'],
+    "legendBorder": 'rgba(20, 20, 20, 0.12)'
+  };
+
+  $MONTH_LABELS := ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+  /* Returns color from $palette based on whether $year equals $maxYear */
+  $getColorByYear := function($year, $maxYear, $palette) {
+    $year = $maxYear ? $palette[1] : $palette[0]
+  };
+
+  /* Build a single line chart dataset for a given year */
+  $buildLineDataset := function($yearData, $year, $maxYear) {
+    $count($yearData) > 0 ? [{
+      "label": $string($year),
+      "data": $MONTH_LABELS#$i.(
+        $d := $yearData[$getMonthIndex(dt_ini) = $i];
+        $count($d) > 0 ? $d.ac : null
+      ),
+      "borderColor": $getColorByYear($year, $maxYear, $COLORS.hex),
+      "pointBackgroundColor": $getColorByYear($year, $maxYear, $COLORS.hex)
+    }] : []
+  };
+
+  /* Extract month index (0-11) from date string */
+  $getMonthIndex := function($dateStr) {
+    $number($fromMillis($toMillis($dateStr), "[M]")) - 1
+  };
+
+  /* Build formatted tooltip data array for a line chart year */
+  $buildFormattedLineData := function($yearData) {
+    $yearData ? [[$MONTH_LABELS#$i.(
+      $d := $yearData[$getMonthIndex(dt_ini) = $i];
+      $count($d) > 0 ? $formatCompactNumber($d.ac) : ''
+    )]] : []
+  };
+
+  /* Bar Chart */
+  $barChartItems := $barChartData.data ? $barChartData.data : [];
+  $barChartSortedData := $sort($barChartItems, function($a, $b) { $a.year - $b.year });
+  $barChartHasData := $count($barChartSortedData) > 0;
+  $barChartConfig := $barChartData.config ? $barChartData.config : {};
+  $barChartMaxYear := $barChartHasData ? $max($barChartSortedData.year) : null;
+
+  /* Line Chart */
+  $lineChartItems := $lineChartData.data ? $lineChartData.data : [];
+  $lineChartYears := $sort($distinct($lineChartItems.year));
+  $lineChartHasData := $count($lineChartItems) > 0;
+  $lineChartConfig := $lineChartData.config ? $lineChartData.config : {};
+  $lineChartMaxYear := $lineChartHasData ? $max($lineChartYears) : null;
+
+  $suggestedMin := $lineChartHasData ? $min($lineChartItems.ac) * 0.85 : "";
+  $suggestedMax := $lineChartHasData ? $max($lineChartItems.ac) * 1.15 : "";
+
+  $lineChartPreviousYearData := $lineChartHasData
+    ? $lineChartItems[year = $lineChartYears[0]]^(dt_ini)
+    : [];
+
+  $lineChartCurrentYearData := $count($lineChartYears) > 1
+    ? $lineChartItems[year = $lineChartYears[1]]^(dt_ini)
+    : [];
+
+  /* Card */
+  $cardDataArray := $cardChartData.data ? $cardChartData.data : [];
+  $cardData := $count($cardDataArray) > 0 ? $cardDataArray[0] : {};
+  $cardConfig := $cardChartData.config ? $cardChartData.config : {};
+
+  /* First config that declares kpi_title is used as header source */
+  $headerConfig := [$cardConfig, $lineChartConfig, $barChartConfig][$exists(kpi_title)][0];
+
+  {
+    "legend": $barChartHasData
+      ? [$barChartSortedData.{
+          "color": $getColorByYear(year, $barChartMaxYear, $COLORS.rgba),
+          "pointStyle": "roundedRectangle",
+          "label": $string(year) & " AC YTD",
+          "border": $COLORS.legendBorder
+        }]
+      : [],
+
+    "header": {
+      "title": $headerConfig.kpi_title,
+      "measure": $headerConfig.kpi_unit_of_measure
+    },
+
+    "bigNumberData": $count($cardDataArray) > 0 ? [
+      {
+        "bigNumber": {
+          "value": $formatCompactNumber($cardData.ac),
+          "measure": ""
+        },
+        "comparison": {
+          "number": {
+            "value": $type($cardData.delta_pct) = "number" ? $formatValue($cardData.delta_pct) : '-',
+            "measure": $type($cardData.delta_pct) = "number" ? $cardConfig.kpi_comparison_unit_of_measure : '',
+            "color": $getPerformanceColor($cardData.performance)
+          },
+          "label": "vs",
+          "value": $formatDateToMonth($cardData.vs_ly_date)
+        }
+      }
+    ] : [],
+
+    "barChart": {
+      "datasets": [
+        {
+          "label": $barChartConfig.kpi_title,
+          "data": $barChartHasData ? [$barChartSortedData.ac] : [],
+          "backgroundColor": $barChartHasData
+            ? [$barChartSortedData.($getColorByYear(year, $barChartMaxYear, $COLORS.hex))]
+            : []
+        }
+      ],
+      "labels": $barChartHasData
+        ? [$barChartSortedData.($substring($string(year), 2, 2) & " AC")]
+        : [],
+      "comparisonLine": {
+        "data": [
+          {
+            "title": "vs LY",
+            "data": $barChartHasData
+              ? [$barChartSortedData.{
+                  "value": ac_vs_ly != null ? $formatValue(ac_vs_ly) : "-",
+                  "measure": ac_vs_ly != null ? $barChartConfig.kpi_comparison_unit_of_measure : "",
+                  "color": ac_vs_ly != null ? $getPerformanceColor(performance) : ""
+                }]
+              : []
+          }
+        ]
+      },
+      "formattedData": [[
+        $barChartHasData ? [$barChartSortedData.$formatCompactNumber(ac)] : []
+      ]]
+    },
+
+    "lineChart": {
+      "suggestedMin": $suggestedMin,
+      "suggestedMax": $suggestedMax,
+      "datasets": $append(
+        $buildLineDataset($lineChartPreviousYearData, $lineChartYears[0], $lineChartMaxYear),
+        $buildLineDataset($lineChartCurrentYearData, $lineChartYears[$count($lineChartYears) - 1], $lineChartMaxYear)
+      ),
+      "labels": $MONTH_LABELS,
+      "formattedData": $lineChartHasData ? $append(
+        $buildFormattedLineData($lineChartPreviousYearData),
+        $buildFormattedLineData($lineChartCurrentYearData)
+      ) : [],
+      "comparisonLine": {
+        "data": [
+          {
+            "title": "vs LY",
+            "data": $MONTH_LABELS#$i.(
+              $d := $lineChartCurrentYearData[$getMonthIndex(dt_ini) = $i];
+              $count($d) > 0 ? {
+                "value": $d.ly != "-" ? $formatValue($d.ly) : "",
+                "measure": $d.ly != null ? $lineChartConfig.kpi_comparison_unit_of_measure : "",
+                "color": $getPerformanceColor($d.performance)
+              } : {"value": "-", "measure": "", "color": ""}
+            )
+          }
+        ]
+      }
+    }
+  }
+)

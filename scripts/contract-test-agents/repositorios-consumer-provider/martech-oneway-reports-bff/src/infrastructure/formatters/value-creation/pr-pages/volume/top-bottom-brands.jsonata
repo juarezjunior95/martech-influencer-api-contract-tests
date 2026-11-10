@@ -1,0 +1,235 @@
+/* *
+ * 🔢 Waterfall charts (v2)
+ * 🎯 Component: Waterfall
+ * 📍 Used on: Volume Pages
+ * 🔄 Input: datasource (brand/country as objects; kpi_name volume rows)
+ * 📤 Output: Waterfall chart — ABI year anchors: YTD'YY; same-month anchors: Mon'YY from dt_end; other rows: raw_brand */
+(
+  $ds := $keys($.datasources)[0];
+  $rawData := $.datasources.$lookup($ds);
+  $isNrKpiView := $count($rawData[kpi_name = "nr"]) > 0;
+  $config := {
+    "legend": [
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "icon": "TrendingUp"
+      },
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "icon": "TrendingDown"
+      }
+    ],
+    "trend": {
+      "up": "positive",
+      "down": "negative"
+    },
+    "comparisons": [
+      {
+        "title": "vs LY",
+        "kpi_name": $isNrKpiView ? "nr" : "volume",
+        "attribute": "ac_vs_ly",
+        "color_type": "direction",
+        "direction_field": "variationDirectionVsLy",
+        "unitMeasure": "%",
+        "empty_brands": ["ABI LAST YEAR", "ABI LY SAME MONTH"]
+      },
+      {
+        "title": "vs BU",
+        "kpi_name": $isNrKpiView ? "nr" : "volume",
+        "attribute": "ac_vs_bu",
+        "color_type": "direction",
+        "direction_field": "variationDirectionVsBu",
+        "unitMeasure": "%",
+        "empty_brands": ["ABI LAST YEAR", "ABI LY SAME MONTH"]
+      },
+      {
+        "title": $isNrKpiView ? "NR/hl vs LY" : "Vol. Weight",
+        "kpi_name": $isNrKpiView ? "nr" : "volume_weight",
+        "attribute": $isNrKpiView ? "per_hl_vs_ly" : "ac",
+        "color_type":  $isNrKpiView ? "direction" : "static",
+        "direction_field": "variationDirectionPerHlVsLy",
+        "unitMeasure": "%",
+        "empty_brands": ["ABI LAST YEAR", "ABI LY SAME MONTH"]
+      }
+    ]
+  };
+
+  $empty := $count($rawData) = 0;
+
+  /* Enrich data: derive month, year, and composite key from dt_end */
+  $data := $map($rawData, function($item) {
+    (
+      $millis := $toMillis($item.dt_end);
+      $month := $fromMillis($millis, "[MNn,*-3]");
+      $year := $fromMillis($millis, "[Y01]");
+      $computedKey := $item.raw_brand & " " & $item.country_iso_code_3 & " " & $item.segment;
+      $merge([$item, {
+        "month": $month,
+        "year": $year,
+        "computed_key": $computedKey
+      }])
+    )
+  });
+
+  $distinctKeys := $distinct($data.computed_key);
+
+  $formatAbreviatedNumber := function($n) {
+    (
+      $abs := $abs($n);
+      $suffix := $abs >= 1000000
+        ? "M"
+        : $abs >= 1000
+          ? "k"
+          : "";
+      $divisor := $abs >= 1000000
+        ? 1000000
+        : $abs >= 1000
+          ? 1000
+          : 1;
+      $val := $n / $divisor;
+      $s := $string($round($val, 1));
+      $formatted := ($val > -1 and $val < 1 and $val != 0 and $substring($s, 0, 1) = ".") ? "0" & $s : $s;
+      $formatted & $suffix
+    )
+  };
+
+  $isValidNumber := function($val) { $type($val) = "number" };
+  $normalizeText := function($value) {
+    $type($value) = "string" ? $lowercase($value) : ""
+  };
+  $othersAggregateValues := ["others", "other", "global"];
+  $isOthersAggregateValue := function($value) {
+    $count($othersAggregateValues[$ = $value]) > 0
+  };
+
+  $datasetData := $map(
+    $distinctKeys,
+    function($key) {
+      (
+        $entry := $data[computed_key = $key][0];
+        $isValidNumber($entry.delta) ? $entry.delta : 0
+      )
+    }
+  );
+
+  $formattedData := $map(
+    $datasetData,
+    function($datapoint) {
+      $formatAbreviatedNumber($datapoint)
+    }
+  );
+
+  $responseLabels := $map(
+    $distinctKeys,
+    function($key) {
+      (
+        $dataLine := $data[computed_key = $key][0];
+        $contains($dataLine.raw_brand, "ABI LAST YEAR") or $contains($dataLine.raw_brand, "ABI CURRENT YEAR")
+          ? $join(["YTD'", $dataLine.year])
+          : $contains($dataLine.raw_brand, "ABI LY SAME MONTH") or $contains($dataLine.raw_brand, "ABI CURRENT MONTH")
+            ? $join([$dataLine.month, "'", $dataLine.year])
+            : $dataLine.raw_brand
+      )
+    }
+  );
+
+  $labelsAvatar := $map(
+    $distinctKeys,
+    function($key) {
+      (
+        $labelData := $data[computed_key = $key][0];
+        $rawBrandNormalized := $normalizeText($labelData.raw_brand);
+        $segmentNormalized := $normalizeText($labelData.segment);
+        $countryNormalized := $normalizeText($labelData.country_iso_code_3);
+        $isOthersSpecific := $contains($lowercase($trim($labelData.raw_brand)), "others");
+        $isOthersAggregate := $isOthersAggregateValue($rawBrandNormalized)
+          or $isOthersSpecific;
+        $isOthersAggregate
+          ? {
+            "title": $labelData.raw_brand,
+            "mainBrand": {
+              "src": $labelData.brand.imageSquare,
+              "alt": $labelData.raw_brand & " " & $labelData.country_iso_code_3
+            },
+            "description": $labelData.raw_brand
+          }
+          : $contains($labelData.raw_brand, "ABI LAST YEAR") or $contains($labelData.raw_brand, "ABI CURRENT YEAR")
+            ? {
+              "title": $join(["YTD'", $labelData.year]),
+              "mainBrand": {
+                "src": $labelData.country.imageIcon,
+                "alt": $labelData.country_iso_code_3 & " FLAG"
+              }
+            }
+            : $contains($labelData.raw_brand, "ABI LY SAME MONTH") or $contains($labelData.raw_brand, "ABI CURRENT MONTH")
+              ? {
+                "title": $join([$labelData.month, "'", $labelData.year]),
+                "mainBrand": {
+                  "src": $labelData.country.imageIcon,
+                  "alt": $labelData.country_iso_code_3 & " FLAG"
+                }
+              }
+              : {
+                "title": $labelData.raw_brand,
+                "description": $labelData.country_iso_code_3,
+                "mainBrand": {
+                  "src": $labelData.brand.imageSquare,
+                  "alt": $labelData.raw_brand & " " & $labelData.country_iso_code_3
+                },
+                "badgeFlag": {
+                  "src": $labelData.country.imageIcon,
+                  "alt": $labelData.country_iso_code_3 & " FLAG"
+                }
+              }
+      )
+    }
+  );
+
+  $comparisonLines := $map(
+    $config.comparisons,
+    function($comparison) {
+      {
+        "title": $comparison.title,
+        "data": $map(
+          $distinctKeys,
+          function($key) {
+            (
+              $labelData := $data[computed_key = $key and kpi_name = $comparison.kpi_name][0];
+              $shouldBeEmpty := $count($filter($comparison.empty_brands, function($brand) { $contains($key, $brand) })) > 0;
+              $shouldBeEmpty
+                ? { "value": "" }
+                : (
+                  $value := $lookup($labelData, $comparison.attribute);
+                  $not($exists($labelData)) or $not($exists($value)) or $type($value) != "number" 
+                    ? { "value": "-" }
+                    : {
+                      "value": $isValidNumber($value)
+                        ? $formatNumber($value, "#,##0.0")
+                        : $value,
+                      "measure": $comparison.unitMeasure,
+                      "trend": $comparison.color_type = "direction"
+                        ? $lookup($config.trend, $lookup($labelData, $comparison.direction_field))
+                        : "neutral"
+                    }
+                )
+            )
+          }
+        )
+      }
+    }
+  );
+
+  $empty
+    ? { "empty": true }
+    : {
+      "period": $data[0].period_type,
+      "values": [$datasetData],
+      "formattedData": [[$formattedData]],
+      "labels": $responseLabels ?? [],
+      "brandsAvatar": { "data": $labelsAvatar ?? [] },
+      "comparisonLine": { "data": $comparisonLines },
+      "legend": $config.legend
+    }
+)

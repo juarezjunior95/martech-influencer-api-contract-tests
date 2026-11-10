@@ -1,0 +1,9 @@
+export declare const CATEGORY_HEALTH_CODES: string[];
+export declare const POS_BOOK_SCOPE: string[];
+export declare const AUDIENCE_TARGETING_CODES: string[];
+export declare const BRAND_ANALYSIS_SCOPE: string[];
+export declare const BRAND_POWER_RESULTS_CODES: string[];
+export declare const INNOVATION_SCOPE: string[];
+export declare const RESOURCE_ALLOCATION_MEDIA_SCOPE: string[];
+export declare const BEES_DISTRIBUTION_COUNTRIES: string[];
+export declare const COUNTRY_PPR_SCOPE: string[];

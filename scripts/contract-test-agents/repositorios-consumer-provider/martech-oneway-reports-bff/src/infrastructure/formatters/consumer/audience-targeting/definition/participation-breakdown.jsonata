@@ -1,0 +1,241 @@
+/**
+* 🎯 Component: Participation Breakdown
+* 📍 Used on: Consumer > Audience Targeting > Definition
+* 🔄 Input: consumer_audience-targeting_definition_participation-breakdown
+* 📤 Output: Table with grouped rows (Gender, Age, Income) and dynamic column headers
+* 🔧 Config: orders, tooltips (column colors handled in the frontend)
+*/
+(
+  $config := {
+    "orders": {
+      "Gender": ["Male", "Female"],
+      "Age": ["LDA - 24", "25-34", "35-44", "45-54", "55+"],
+      "Income": ["High Income", "Medium Income", "Low Income"]
+    },
+    "groupOrder": ["Gender", "Age", "Income"],
+    "tooltips": {
+      "beer": {
+        "tooltipTitle": "Beer",
+        "tooltipContent": "Percentage of declared category, segment, brand or competitor volume represented by this cohort."
+      },
+      "priceTier": {
+        "tooltipTitle": "Segment",
+        "tooltipContent": "Indicates whether this cohort is over- or under-represented in the brand's segment compared to the category baseline."
+      },
+      "brand": {
+        "tooltipTitle": "Brand",
+        "tooltipContent": "Shows whether this cohort is over- or under-represented within the brand compared to its segment baseline."
+      },
+      "competitor": {
+        "tooltipTitle": "Competitor",
+        "tooltipContent": "Shows whether the competitor over- or under-indexes with this cohort compared to the segment baseline."
+      }
+    },
+    "childTooltips": {
+      "beer_volume": {
+        "tooltipTitle": "Volume share",
+        "tooltipContent": "Share of total beer volume (%) attributed to the Beer portfolio for each segment."
+      },
+      "priceTier_volume": {
+        "tooltipTitle": "Volume share",
+        "tooltipContent": "Volume share (%) for $NAME brands within the segment."
+      },
+      "brand_volume": {
+        "tooltipTitle": "Volume share",
+        "tooltipContent": "$NAME volume share (%) for the selected segment."
+      },
+      "competitor_volume": {
+        "tooltipTitle": "Volume share",
+        "tooltipContent": "$NAME volume share (%) within the segment."
+      },
+      "index": {
+        "tooltipTitle": "Comparison Index",
+        "tooltipContent": "Compares the brand's audience distribution in this demographic segment versus the baseline selected (Beer, Core Co, etc.)."
+      }
+    }
+  };
+
+  $dsKey := $keys(datasources)[0];
+  $rawData := $lookup(datasources, $dsKey);
+  $data := $type($rawData) = "array" ? $rawData : $exists($rawData) ? [$rawData] : [];
+
+  $asString := function($value) {
+    $type($value) = "string" ? $value
+    : ($type($value) = "number" or $type($value) = "boolean") ? $string($value)
+    : ""
+  };
+
+  $groupOf := function($cohort) {
+    (
+      $cohortText := $asString($cohort);
+      $contains($lowercase($cohortText), /male|female/) ? "Gender"
+      : $contains($lowercase($cohortText), "income") ? "Income"
+    : "Age"
+    )
+  };
+
+  $segmentLabel := function($cohort) {
+    (
+      $cohortText := $asString($cohort);
+      $group := $groupOf($cohort);
+      $group = "Income" ? $trim($replace($cohortText, "Income", ""))
+      : $group = "Age" ? $replace($cohortText, " ", "")
+      : $cohortText
+    )
+  };
+
+  $titleCase := function($str) {
+    $join($map($split($lowercase($asString($str)), " "), function($word) {
+      $uppercase($substring($word, 0, 1)) & $substring($word, 1)
+    }), " ")
+  };
+
+  $toFlatId := function($name) {
+    $lowercase($replace($asString($name), /[^A-Za-z0-9]/, ""))
+  };
+
+  $applyTemplate := function($template, $name) {
+    (
+      $templateText := $asString($template);
+      $nameText := $asString($name);
+      $replace($templateText, /\$NAME/, $nameText)
+    )
+  };
+
+  $metricCells := function($item, $flatPrefix, $volumeKey, $indexKey) {
+    $merge([
+      $type($lookup($item, $volumeKey)) = "number"
+        ? { ($flatPrefix & "_volume"): { "value": $lookup($item, $volumeKey), "cellType": "barChart" } } : {},
+      $type($lookup($item, $indexKey)) = "number"
+        ? { ($flatPrefix & "_index"): { "value": $lookup($item, $indexKey), "cellType": "tag" } } : {}
+    ])
+  };
+
+  $count($data) = 0 ? { "empty": true } : (
+    $first := $data[0];
+    $priceTierTitle := $titleCase($first.price_tier);
+    $brandTitle := $asString($first.brand);
+    $competitorTitle := $asString($first.competitor);
+
+    $beerFlat := "beer";
+    $priceTierFlat := $toFlatId($priceTierTitle);
+    $brandFlat := $toFlatId($brandTitle);
+    $competitorFlat := $toFlatId($competitorTitle);
+
+    /* Header generation */
+    $header := [
+      { "id": "segment", "title": "" },
+      {
+        "id": $beerFlat,
+        "title": "Beer",
+        "tooltipTitle": $config.tooltips.beer.tooltipTitle,
+        "tooltipContent": $config.tooltips.beer.tooltipContent,
+        "children": [
+          {
+            "id": $beerFlat & "_volume",
+            "title": "Volume",
+            "tooltipTitle": $config.childTooltips.beer_volume.tooltipTitle,
+            "tooltipContent": $config.childTooltips.beer_volume.tooltipContent
+          }
+        ]
+      },
+      {
+        "id": $priceTierFlat,
+        "title": $priceTierTitle,
+        "tooltipTitle": $applyTemplate($config.tooltips.priceTier.tooltipTitle, $priceTierTitle),
+        "tooltipContent": $applyTemplate($config.tooltips.priceTier.tooltipContent, $priceTierTitle),
+        "children": [
+          {
+            "id": $priceTierFlat & "_volume",
+            "title": "Volume",
+            "tooltipTitle": $applyTemplate($config.childTooltips.priceTier_volume.tooltipTitle, $priceTierTitle),
+            "tooltipContent": $applyTemplate($config.childTooltips.priceTier_volume.tooltipContent, $priceTierTitle)
+          },
+          {
+            "id": $priceTierFlat & "_index",
+            "title": "Index",
+            "tooltipTitle": $config.childTooltips.index.tooltipTitle,
+            "tooltipContent": $config.childTooltips.index.tooltipContent
+          }
+        ]
+      },
+      {
+        "id": $brandFlat,
+        "title": $brandTitle,
+        "tooltipTitle": $applyTemplate($config.tooltips.brand.tooltipTitle, $brandTitle),
+        "tooltipContent": $applyTemplate($config.tooltips.brand.tooltipContent, $brandTitle),
+        "children": [
+          {
+            "id": $brandFlat & "_volume",
+            "title": "Volume",
+            "tooltipTitle": $applyTemplate($config.childTooltips.brand_volume.tooltipTitle, $brandTitle),
+            "tooltipContent": $applyTemplate($config.childTooltips.brand_volume.tooltipContent, $brandTitle)
+          },
+          {
+            "id": $brandFlat & "_index",
+            "title": "Index",
+            "tooltipTitle": $config.childTooltips.index.tooltipTitle,
+            "tooltipContent": $config.childTooltips.index.tooltipContent
+          }
+        ]
+      },
+      {
+        "id": $competitorFlat,
+        "title": $competitorTitle,
+        "tooltipTitle": $applyTemplate($config.tooltips.competitor.tooltipTitle, $competitorTitle),
+        "tooltipContent": $applyTemplate($config.tooltips.competitor.tooltipContent, $competitorTitle),
+        "children": [
+          {
+            "id": $competitorFlat & "_volume",
+            "title": "Volume",
+            "tooltipTitle": $applyTemplate($config.childTooltips.competitor_volume.tooltipTitle, $competitorTitle),
+            "tooltipContent": $applyTemplate($config.childTooltips.competitor_volume.tooltipContent, $competitorTitle)
+          },
+          {
+            "id": $competitorFlat & "_index",
+            "title": "Index",
+            "tooltipTitle": $config.childTooltips.index.tooltipTitle,
+            "tooltipContent": $config.childTooltips.index.tooltipContent
+          }
+        ]
+      }
+    ];
+
+    /* Row building */
+    $buildRow := function($item, $isFirst) {
+      (
+        $group := $groupOf($item.cohort_level);
+        $merge([
+          { "rowGroup": $group },
+          $isFirst ? { "rowGroupLabel": $group } : {},
+          { "segment": { "value": $segmentLabel($item.cohort_level) } },
+          $type($lookup($item, "category_ac")) = "number"
+            ? { ($beerFlat & "_volume"): { "value": $lookup($item, "category_ac"), "cellType": "barChart" } } : {},
+          $metricCells($item, $priceTierFlat, "price_tier_ac", "price_tier_index"),
+          $metricCells($item, $brandFlat, "brand_ac", "brand_index"),
+          $metricCells($item, $competitorFlat, "competitor_ac", "competitor_index")
+        ])
+      )
+    };
+
+    /* Group rows by demographic category using $reduce to correctly track first row */
+    $rows := $map($config.groupOrder, function($group) {
+      (
+        $orderedCohorts := $lookup($config.orders, $group);
+        $reduce($orderedCohorts, function($acc, $cohort) {
+          (
+            $item := $data[cohort_level = $cohort][0];
+            $exists($item)
+              ? $append($acc, [$buildRow($item, $count($acc) = 0)])
+              : $acc
+          )
+        }, [])
+      )
+    });
+
+    {
+      "header": $header,
+      "rows": $rows
+    }
+  )
+)

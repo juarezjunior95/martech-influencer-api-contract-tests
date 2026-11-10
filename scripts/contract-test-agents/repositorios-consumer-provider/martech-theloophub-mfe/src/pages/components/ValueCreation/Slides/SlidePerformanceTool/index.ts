@@ -1,0 +1,1 @@
+export { SlidePerformanceTool } from './SlidePerformanceTool';

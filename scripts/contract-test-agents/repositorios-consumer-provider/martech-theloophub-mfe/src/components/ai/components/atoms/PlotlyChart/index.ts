@@ -1,0 +1,1 @@
+export { PlotlyChart } from './PlotlyChart';

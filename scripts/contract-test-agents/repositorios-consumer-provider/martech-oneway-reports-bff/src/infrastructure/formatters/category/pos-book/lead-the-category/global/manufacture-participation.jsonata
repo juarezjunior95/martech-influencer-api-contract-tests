@@ -1,0 +1,123 @@
+/**
+ * 🔢 MANUFACTURE PARTICIPATION FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: Category > POS Book > Lead the Category > Global > Manufacture Participation
+ * 🔄 Input: category_pos-book_lead-the-category_global_manufacture-participation data
+ * 📤 Output: Manufacture participation table with header and rows grouped by maturity
+ * 🔧 Config: color_dict for manufacturer colors, headers dinâmicos baseados nos dados
+ */
+
+(
+  $dsKey := $keys(datasources)[0];
+  $data := $lookup(datasources, $dsKey);
+  $isEmpty := $count($data) = 0;
+
+  $chartUnitMeasure := "%";
+  $variationMeasure := "pp";
+
+  $distinctManufacturers := $distinct($data.manufacturer);
+
+  $toManufacturerId := function($manufacturer) {
+    $lowercase($replace($manufacturer, " ", "_"))
+  };
+
+  $getColor := function($manufacturer) {
+    $contains($lowercase($manufacturer), "alcohol") ? "#C9D1D6" :
+    $contains($lowercase($manufacturer), "beer") ? "#F0DF78" :
+    $contains($lowercase($manufacturer), "abinbev") ? "#EEC879" :
+    $contains($lowercase($manufacturer), "heineken") ? "#A1E3BC" :
+    $contains($lowercase($manufacturer), "other") ? "#A1CFF4" :
+    $contains($lowercase($manufacturer), "core") ? "#F0DF78" :
+    $contains($lowercase($manufacturer), "premium") ? "#F0DF78" :
+    "#C9D1D6"
+  };
+
+  $buildManufacturerData := function($item, $manufacturer) {
+    $item ? {
+      "chartData": {
+        "data": [$formatValue($item.ac)],
+        "variation": $formatValue($item.ac_vs_ly),
+        "backgroundColor": $getColor($manufacturer),
+        "chartUnitMeasure": $chartUnitMeasure
+      },
+      "variation": $formatValue($item.ac_vs_ly),
+      "variationMeasure": $variationMeasure,
+      "tooltip": $contains($lowercase($manufacturer), "other") ? $item.manufacturer_name : ""
+    } : {}
+  };
+
+  $maturityOrder := ["N/A", "M3", "M2", "M1"];
+  $distinctMaturities := $distinct($data.maturity);
+  
+  $sortedMaturities := $filter($maturityOrder, function($m) {
+    $m in $distinctMaturities
+  });
+
+  $buildCountryRow := function($countryRowData, $maturityLabel) {
+    (
+      $countryCode := $countryRowData[0].country_iso_code_3;
+      $displayCountry := $countryCode = "Global" ? "Global" : $countryCode;
+      
+      $baseObj := {
+        "label": { "value": $maturityLabel },
+        "country": { "value": $displayCountry }
+      };
+      
+      $manufacturerObjs := $map($distinctManufacturers, function($manufacturer) {
+        (
+          $manufacturerId := $toManufacturerId($manufacturer);
+          $item := $filter($countryRowData, function($row) { 
+            $row.manufacturer = $manufacturer 
+          })[0];
+          {
+            ($manufacturerId): $buildManufacturerData($item, $manufacturer)
+          }
+        )
+      });
+      
+      $merge($append([$baseObj], $manufacturerObjs))
+    )
+  };
+
+  $buildRows := function() {
+    $map($sortedMaturities, function($maturity) {
+      (
+        $maturityData := $filter($data, function($item) { $item.maturity = $maturity });
+        $distinctCountries := $distinct($maturityData.country_iso_code_3);
+        $maturityLabel := $maturity = "N/A" ? "" : $maturity;
+        
+        $map($distinctCountries, function($country) {
+          (
+            $countryRowData := $filter($maturityData, function($item) { $item.country_iso_code_3 = $country });
+            $buildCountryRow($countryRowData, $maturityLabel)
+          )
+        })
+      )
+    })
+  };
+
+  $labelHeader := {
+    "title": "Label",
+    "children": [
+      { "id": "label", "title": "" },
+      { "id": "country", "title": "Country" }
+    ]
+  };
+
+  $manufacturerHeaders := $map($distinctManufacturers, function($manufacturer) {
+    {
+      "id": $toManufacturerId($manufacturer),
+      "title": $manufacturer,
+      "backgroundColor": $getColor($manufacturer)
+    }
+  });
+
+  $header := $append([$labelHeader], $manufacturerHeaders);
+
+  $isEmpty
+    ? { "empty": true }
+    : {
+        "header": $header,
+        "rows": $buildRows()
+      }
+)

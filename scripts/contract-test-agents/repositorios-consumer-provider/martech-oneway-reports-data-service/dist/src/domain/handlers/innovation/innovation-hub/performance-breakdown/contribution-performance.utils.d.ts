@@ -1,0 +1,10 @@
+import { DataItem } from "@domain/entities/datasource.entity";
+export declare const VALID_CONTRIBUTION_KPIS: Set<string>;
+export declare const EPIC_CONTRIBUTION_LABELS: readonly ["'24 FY", "'25 FY", "Expiration", "Baseline", "Y1", "Y2", "Y3", "Y4", "Y5", "'26 LE"];
+export declare const pickField: (item: Record<string, unknown>, ...keys: string[]) => unknown;
+export declare const toNumber: (value: unknown) => number | undefined;
+export declare const normalizeKpi: (value: unknown) => string | undefined;
+export declare const mapKpiSlug: (value: unknown) => string | undefined;
+export declare const resolveEpicLabelIndex: (item: Record<string, unknown>) => number;
+export declare const sortByBarOrder: (rows: DataItem[]) => DataItem[];
+export declare const toCanonicalPeriodLabel: (item: Record<string, unknown>, index: number) => string;

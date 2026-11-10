@@ -1,0 +1,120 @@
+(
+  /**
+   * 🎯 Component: Media Spend Ranking Chart (by BU vs AC YTD)
+   * 📍 Used on: Resource Allocation Media > Overview
+   * 🔄 Input: connections-and-creativity_resource-allocation-media_overview_unified-ranking
+   * 📤 Output: media_spend { chart_key: { datasets, labels, icons, variation_caption } }
+   * 🔧 Config: chart_key, segments, country_map, dataset_label, variation_caption, colors
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "chart_key": "owr_resource-allocation_overview_ranking-chart_media-spend",
+    "dataset_label": "Media Spend",
+    "has_percentage": false,
+    "variation_caption": {
+      "title": "BU",
+      "subtitle": "vs AC [ YTD ]",
+      "unit_of_measure": ""
+    },
+    "colors": {
+      "chart": ["#E5B611", "#C2346A", "#2F74AA", "#4E579F"],
+      "background": "#F0D59E",
+      "variation_up": "#00810d",
+      "variation_down": "#a30a0a"
+    }
+  };
+
+  $segments := $getSegmentColors();
+  $countryMap := $getCountryMap();
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $dsKey := $keys($datasources)[0];
+  $ds := $lookup($datasources, $dsKey);
+  $rawData := $exists($ds.data) ? $ds.data : ($exists($ds) and $type($ds) = "array" ? $ds : []);
+  $filteredData := $count($rawData) > 0
+    ? $rawData[level_2 = "media"]
+    : [];
+  $isEmpty := $count($filteredData) = 0;
+ 
+  $isCountryView := $count($filteredData[raw_brand = "N/A"]) > 0;
+  $entry := $isEmpty
+    ? []
+    : (
+      $isCountryView
+        ? $sort($filteredData, function($a, $b) { $a.ac < $b.ac })
+        : (
+          $segmentOrder := $keys($segments);
+          $reduce($segmentOrder, function($acc, $segment) {(
+            $filtered := $filteredData[segment = $segment];
+            $sortedSegment := $count($filtered) > 0
+              ? $sort($filtered, function($a, $b) { $a.ac < $b.ac })
+              : [];
+            $append($acc, $sortedSegment)
+          )}, [])
+        )
+    );
+  $entrySorted := $entry;
+  $dataValues := $ensureArray($entrySorted.ac);
+  $maxValue := $max($dataValues);
+  $suggestedMax := $maxValue >= 100 ? 100 : $ceil($maxValue);
+  $formattedValues := $ensureArray($map($entrySorted, function($row) { $formatValue($row.ac) }));
+  {
+    "media_spend": $isEmpty
+      ? { "empty": true }
+      : {
+          ($config.chart_key): {
+          "datasets": [
+            {
+              "type": "bar",
+              "label": $config.dataset_label,
+              "data": $dataValues,
+              "backgroundColor": [$config.colors.background],
+              "baseChartColor": $isCountryView
+                ? null
+                : $ensureArray($entrySorted.($lookup($segments, segment) ?: $segments.Megabrands)),
+              "formattedData": $formattedValues
+            }
+          ],
+          "formattedData": [[$map($entrySorted, function($row) { $formatValue($row.ac) })]],
+          "suggestedMax": $suggestedMax,
+          "hasPercentage": $config.has_percentage,
+          "labels": $ensureArray(
+            $map($entrySorted, function($v) {
+              $v.raw_brand = "N/A"
+                ? ($lookup($countryMap, $v.country_iso_code_3) ?: $v.country_iso_code_3)
+                : $v.raw_brand
+            })
+          ),
+          "icons": $ensureArray(
+            $entrySorted.(global_brands = "Global Brand" ? "world" : "")
+          ),
+          "variationCaptionData": [
+            {
+              "title": $config.variation_caption.title,
+              "subtitle": $config.variation_caption.subtitle,
+              "label": " ",
+              "data": $ensureArray(
+                $map($entrySorted, function($row) {
+                  (
+                    $val := $row.ac_vs_bu;
+                    $numVal := $exists($val) and $type($val) = "number" ? $val : null;
+                    $direction := $numVal != null ? ($numVal > 0 ? "up" : "down") : "down";
+                    $color := $numVal != null ? ($direction = "up" ? $config.colors.variation_up : $config.colors.variation_down) : "";
+                    [
+                      {
+                        "value": $numVal != null ? $string($numVal) : "-",
+                        "unit_of_measure": $config.variation_caption.unit_of_measure,
+                        "color": $color
+                      }
+                    ]
+                  )
+                })
+              )
+            }
+          ]
+        }
+      }
+  }
+)

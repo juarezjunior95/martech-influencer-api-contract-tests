@@ -1,0 +1,85 @@
+/* 🔢 GROW THE CATEGORY SPARKLINE FORMATTER
+ * 🎯 Component: Beer Category Participation Sparkline Card
+ * 📍 Used on: Category Home
+ * 🔄 Input: category_home_grow-the-category datasource
+ * 📤 Output: BigNumberSparkLineData for the frontend */
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+
+  /* Helper functions */
+
+  /* Safely converts value to number, returns undefined for null */
+  $safeNumber := function($val) {
+    $exists($val) and $val != null ? $number($val) : undefined
+  };
+
+  /* Formats number with one decimal place and thousand separator */
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number"
+      ? $formatNumber($value, '#,##0.0')
+      : "-"
+  };
+
+  /* Formats the label with unit_of_measure in brackets */
+  $formatUnitLabel := function($unit) {
+    $exists($unit) and $unit != "" ? "[ " & $unit & " ]" : ""
+  };
+
+  /* Maps direction to trend for frontend */
+  $mapTrend := function($direction) {
+    $direction = "up" ? "positive" :
+    $direction = "down" ? "negative" :
+    undefined
+  };
+
+  /* Formats the quarter from a date (e.g.: "2024-12-31" -> "Q4'24") */
+  $formatQuarter := function($dateStr) {(
+    $exists($dateStr) and $dateStr != "" ? (
+      $month := $number($substring($dateStr, 5, 2));
+      $quarter := $ceil($month / 3);
+      $year := $substring($dateStr, 2, 2);
+      "Q" & $string($quarter) & "'" & $year
+    ) : undefined
+  )};
+
+  /* Formats the complete period (e.g.: "Q3'25 - R12M") */
+  $formatPeriod := function($dateStr, $timeperiod) {(
+    $quarter := $formatQuarter($dateStr);
+    $exists($quarter) and $exists($timeperiod) ? $quarter & " - " & $timeperiod : $quarter
+  )};
+
+  $dataArray := $type($data) = "array" ? $data : $exists($data) ? [$data] : [];
+
+  $count($dataArray) = 0 ? [] : (
+
+    $sorted := $sort($dataArray, function($a, $b) { $a.dt_end > $b.dt_end });
+
+    $total := $count($sorted);
+    $bigNumberRecord := $sorted[$total - 1];
+    $sparklineRecords := $total > 1 ? $filter($sorted, function($v, $i) { $i < $total - 1 }) : [];
+
+    [{
+      "chartTitle": "Beer Category Participation",
+      "chartPeriod": $formatPeriod($bigNumberRecord.dt_end, $bigNumberRecord.period),
+      "bigNumberData": [
+        {
+          "bigNumber": {
+            "value": $formatValue($safeNumber($bigNumberRecord.ac_vs_ly)),
+            "measure": $bigNumberRecord.comp_unit_of_measure,
+            "trend": $mapTrend($bigNumberRecord.variationDirectionVsLy)
+          },
+          "comparison": {
+            "label": "vs",
+            "value": "LY"
+          },
+          "secondaryInfo": {
+            "label": $formatUnitLabel($bigNumberRecord.unit_of_measure),
+            "value": $formatValue($safeNumber($bigNumberRecord.ac))
+          }
+        }
+      ],
+      "chartLineData": [$sparklineRecords.$number(ac)]
+    }]
+  )
+)

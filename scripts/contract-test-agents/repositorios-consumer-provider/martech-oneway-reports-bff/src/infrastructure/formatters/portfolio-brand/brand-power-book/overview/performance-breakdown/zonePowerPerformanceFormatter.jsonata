@@ -1,0 +1,139 @@
+/**
+ * 🔢 ZONE POWER PERFORMANCE FORMATTER
+ * 🎯 Component: KPI table (zona × ABI / Competitor)
+ * 📍 Used on: BrandPowerBook > Performance breakdown > Zone
+ * 🔄 Input: performance-breakdown_by-zone
+ * 📤 Output: table + legend (raiz)
+ */
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+
+  $config := {
+    "zoneOrder": ["NAZ", "SAZ", "MAZ", "APAC", "AFR", "EUR"],
+    "variation": { "unit_measure": "pp" },
+    "direction": { "up": "#49764B", "down": "#A20A0A" },
+    "legend": [
+      { "label": "ABI", "color": "#EDCD20", "selected_color": "#EDDAB1" },
+      { "label": "Competitor", "color": "#97ADBB", "selected_color": "#D3E3EE" }
+    ]
+  };
+
+  $powerBookExportCompetitorLegend:= { "label": "Competitor", "color": "#46ca7b", "selected_color": "#D3E3EE" };
+
+  $pickLatestRow := function($rows) {
+    (
+      $sorted := $sort($rows, function($left, $right) {
+        $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+      });
+      $count($sorted) > 0 ? $sorted[$count($sorted) - 1] : null
+    )
+  };
+
+  $rowsForZone := function($zone, $levelUpper) {
+    $filter(
+      $data,
+      function($row) {
+        $row.abi_zone = $zone and $uppercase($row.level_1) = $levelUpper
+      }
+    )
+  };
+
+  $buildAbiCell := function($item) {
+    {
+      "id": { "value": $item.abi_zone },
+      "ac": {
+        "chartData": {
+          "data": [$item.ac],
+          "backgroundColor": [$config.legend[0].color],
+          "secondaryBackgroundColor": [$config.legend[0].selected_color]
+        }
+      },
+      "ly": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $item.ac_vs_ly <= 0 ? "down" : "up",
+        "value": $item.ac_vs_ly
+      },
+      "lq": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $item.ac_vs_lq <= 0 ? "down" : "up",
+        "value": $item.ac_vs_lq
+      }
+    }
+  };
+
+  $buildCompetitorCell := function($item) {
+    (
+      $legend:= $item.raw_brand = "Heineken" ? $powerBookExportCompetitorLegend : $config.legend[1];
+    {
+      "type": { "value": "competitor" },
+      "id": { "value": $item.abi_zone },
+      "ac": {
+        "chartData": {
+          "data": [$item.ac],
+          "backgroundColor": [$legend.color],
+          "secondaryBackgroundColor": [$legend.selected_color]
+        }
+      },
+      "ly": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $item.ac_vs_ly <= 0 ? "down" : "up",
+        "value": $item.ac_vs_ly
+      },
+      "lq": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $item.ac_vs_ly <= 0 ? "down" : "up",
+        "value": $item.ac_vs_lq
+      }
+    }
+    )
+  };
+
+  $cellsForZone := function($zone) {
+    $append(
+      $pickLatestRow($rowsForZone($zone, "ABI"))
+        ~> function($abiRow) { $exists($abiRow) ? [$buildAbiCell($abiRow)] : [] },
+      $pickLatestRow($rowsForZone($zone, "COMP"))
+        ~> function($compRow) { $exists($compRow) ? [$buildCompetitorCell($compRow)] : [] }
+    )
+  };
+
+  $isEmpty := $count($data) = 0;
+  $distinctZones := $isEmpty ? [] : $distinct($data.abi_zone);
+  $orderedZones := $isEmpty
+    ? []
+    : $filter(
+      $config.zoneOrder,
+      function($zone) { $zone in $distinctZones }
+    );
+
+  $headerLyTitle := $isEmpty
+    ? "vs LY"
+    : "vs " & $formatLyQuarter($data[0].dt_end);
+  $headerLqTitle := $isEmpty
+    ? "vs LQ"
+    : "vs " & $formatLqQuarter($data[0].dt_end);
+
+  $tableHeader := [
+    { "id": "id", "title": "" },
+    { "id": "ac", "title": "AC" },
+    { "id": "ly", "title": $headerLyTitle },
+    { "id": "lq", "title": $headerLqTitle }
+  ];
+
+  $flatRows := $isEmpty
+    ? []
+    : $reduce(
+      $map($orderedZones, $cellsForZone),
+      function($accumulator, $zonePair) { $append($accumulator, $zonePair) },
+      []
+    );
+
+  {
+    "table": {
+      "header": $tableHeader,
+      "rows": [[ $flatRows ]]
+    },
+    "legend": $config.legend
+  }
+)

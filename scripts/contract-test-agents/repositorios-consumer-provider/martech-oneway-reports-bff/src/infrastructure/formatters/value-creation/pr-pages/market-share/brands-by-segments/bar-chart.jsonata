@@ -1,0 +1,103 @@
+/* *
+ * 🔢 Bar charts - Brands by Segments (Market Share)
+ * 🎯 Component: Bar
+ * 📍 Used on: Market Share Pages - Global Moves
+ * 🔄 Input: datasource (dt_ini, dt_end, year, ac, ly, ac_vs_ly, variationDirectionVsLy)
+ * 📤 Output: Bar chart interface */
+
+(
+  $ds := $keys($.datasources)[0];
+  $rawData := $.datasources.$lookup($ds);
+  $data := $rawData;
+  $empty := $count($data) = 0;
+
+  $config := {
+    "direction": {
+      "up": "#007800",
+      "down": "#B91C1C"
+    },
+    "comparative_unit": "%",
+    "colors": {
+      "previousYear": "#eddab1",
+      "currentYear": "#d1a33c"
+    },
+    "legend": [
+      {
+        "color": "#EDDAB1",
+        "label": "Previous Year",
+        "shape": "thinPill"
+      },
+      {
+        "color": "#D1A33C",
+        "label": "Current Year",
+        "shape": "thinPill"
+      }
+    ]
+  };
+
+  $isNumber := function($value) { $exists($value) and $type($value) = "number" };
+
+  $formatPercentValue := function($value) {
+    $isNumber($value) ? $formatNumber($value, "#,##0.0") : "-"
+  };
+
+  $formatBarValueWithMeasure := function($value) {
+    $isNumber($value)
+      ? $formatNumber($value, "#,##0.0") & $config.comparative_unit
+      : "-"
+  };
+
+  $sortedByYear := $data^(year);
+  $currentItem := $sortedByYear[$count($sortedByYear) - 1];
+  $currentYear := $currentItem.year;
+
+  $columns := $map($sortedByYear, function($item) {
+    (
+      $isCurrent := $item.year = $currentYear;
+      $variationColor := $isNumber($item.ac_vs_ly) and $item.ac_vs_ly >= 0
+        ? $config.direction.up
+        : $config.direction.down;
+      {
+        "label": $string($item.year),
+        "value": $isNumber($item.ac) ? $item.ac : null,
+        "background": $isCurrent ? $config.colors.currentYear : $config.colors.previousYear,
+        "comparison": $isNumber($item.ac_vs_ly)
+          ? {
+              "value": $formatPercentValue($item.ac_vs_ly),
+              "measure": "pp",
+              "color": $variationColor
+            }
+          : { "value": "-" }
+      }
+    )
+  });
+
+  $labels := $map($columns, function($column) { $column.label });
+  $values := $map($columns, function($column) { $column.value });
+  $backgroundColor := $map($columns, function($column) { $column.background });
+  $formattedValues := $map($columns, function($column) { $formatBarValueWithMeasure($column.value) });
+  $comparisonData := $map($columns, function($column) { $column.comparison });
+
+  $empty
+    ? { "empty": true }
+    : {
+      "period": "YTD",
+      "legend": $config.legend,
+      "datasets": [
+        {
+          "data": $values,
+          "backgroundColor": $backgroundColor
+        }
+      ],
+      "labels": $labels,
+      "formattedData": [[$formattedValues]],
+      "comparisonLine": {
+        "data": [
+          {
+            "title": "vs LY",
+            "data": $comparisonData
+          }
+        ]
+      }
+    }
+)

@@ -1,0 +1,131 @@
+(
+  /**
+   * 🎯 Component: Bar Charts Global (media, non_working_money, sponsorship_activation)
+   * 📍 Used on: Resource Allocation Media > Resource Allocation
+   * 🔄 Input: connections-and-creativity_resource-allocation-media_resource-allocation_bar-charts-global
+   * 📤 Output: media, sponsorship_activation, non_working_money { datasets, refreshDate, caption_country_flag, total_allocation, type, labels }
+   * 🔧 Config: comparison_unit_of_measure, total_allocation
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "comparison_unit_of_measure": "%",
+    "total_allocation": {
+      "unit": "$",
+      "empty_value": "-"
+    }
+  };
+
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $dsKey := $keys($datasources)[0];
+  $ds := $lookup($datasources, $dsKey);
+  $data := $exists($ds.data) ? $ds.data : ($exists($ds) and $type($ds) = "array" ? $ds : []);
+
+  $emptyChart := {
+    "datasets": [],
+    "refreshDate": { "month": "", "quarter": "" },
+    "caption_country_flag": {},
+    "total_allocation": { "value": [] },
+    "type": "bar",
+    "labels_type": "country_iso_code_3",
+    "comparison_unit_of_measure": $config.comparison_unit_of_measure,
+    "formatted_data": true,
+    "labels": []
+  };
+  $count($data) = 0 ? {
+    "media": { "media": $emptyChart },
+    "sponsorship_activation": { "sponsorship_activation": $emptyChart },
+    "non_working_money": { "non_working_money": $emptyChart }
+  } : (
+    $mediaRows := $filter($data, function($row) { $row.kpi_name = "media" and $row.level_2 = "tt_mkt" });
+    $labelsRaw := $map($mediaRows, function($row) { $row.country_iso_code_3 });
+    $labels := $type($labelsRaw) = "array" ? $labelsRaw : [$labelsRaw];
+    $firstRow := $data[0];
+    $isCountryData := "ABI" in $data.raw_brand;
+    $refreshMonth := $exists($firstRow.refreshMonthLabel) ? $firstRow.refreshMonthLabel : "";
+    $refreshDate := { "month": $refreshMonth, "quarter": $formatMonthLabelToQuarter($refreshMonth) };
+
+    $captionCountryFlag := $reduce($mediaRows, function($acc, $row) {
+      $merge([$acc, { ($row.country_iso_code_3): { "flag": $exists($row.country.imageIcon) ? $row.country.imageIcon : "", "label": $row.country_iso_code_3 } }])
+    }, {});
+
+    $prefixTotalAllocationWithUnit := function($value) {
+      (
+        $formatted := $formatValue($value);        
+        $formatted != $config.total_allocation.empty_value
+          ? $config.total_allocation.unit & $formatted
+          : $formatted        
+      )
+    };	  
+
+    $totalAllocationValue := $map($mediaRows, function($row) {
+      $not($exists($row)) ? [$config.total_allocation.empty_value, $config.total_allocation.empty_value] : (
+        $compRaw := $exists($row.comp_value) ? $row.comp_value : $row.ac;
+        $acRaw := $exists($row.ac) ? $row.ac : null;
+        [$prefixTotalAllocationWithUnit($compRaw), $prefixTotalAllocationWithUnit($acRaw)]
+      )
+    });
+    $totalAllocation := { "value": $totalAllocationValue };
+
+    $datasetForCountry := function($level2, $countryCode) {
+      $filter($filter($data, function($r) { $r.kpi_name = "media_weight" and $r.level_2 = $level2 }), function($r) { $r.country_iso_code_3 = $countryCode })[0] ~> function($row) {
+        $exists($row) ? (
+          $compVal := $exists($row.comp_value) ? $row.comp_value : ($exists($row.comp_value_0) ? $row.comp_value_0 : null);
+          {
+            "type": "bar",
+            "data": [
+              $compVal != null ? $formatValue($safeNumber($compVal)) : "",
+              $row.ac != null ? $formatValue($safeNumber($row.ac)) : ""
+            ],
+            "label": $level2,
+            "formattedData": [
+              $compVal != null ? $formatValue($safeNumber($compVal)) & $config.comparison_unit_of_measure : "",
+              $row.ac != null ? $formatValue($safeNumber($row.ac)) & $config.comparison_unit_of_measure : ""
+            ]
+          }
+        ) : {
+          "type": "bar",
+          "data": ["", ""],
+          "label": $level2,
+          "formattedData": ["", ""]
+        }
+      }
+    };
+
+    $buildChart := function($level2) {
+      { ($level2): { ($level2): {
+        "datasets": $map($labels, function($countryCode) { $datasetForCountry($level2, $countryCode) }),
+        "refreshDate": $refreshDate,
+        "caption_country_flag": $captionCountryFlag,
+        "total_allocation": $totalAllocation,
+        "type": "bar",
+        "labels_type": "country_iso_code_3",
+        "comparison_unit_of_measure": $config.comparison_unit_of_measure,
+        "formatted_data": true,
+        "labels": $labels
+      }}}
+    };
+
+    $filterOptions := $map($labels, function($label, $i) {
+      (
+        $isFirstItem := $i = 0;
+        $isFirstItem or $label = "ABI" ? 
+          undefined
+          :
+          {
+            "label": $label,
+            "value": $label
+          }
+      )
+    });
+
+    {
+      "media": $buildChart("media").media,
+      "sponsorship_activation": $buildChart("sponsorship_activation").sponsorship_activation,
+      "non_working_money": $buildChart("non_working_money").non_working_money,
+      "filter": $filterOptions
+    }
+  )
+)

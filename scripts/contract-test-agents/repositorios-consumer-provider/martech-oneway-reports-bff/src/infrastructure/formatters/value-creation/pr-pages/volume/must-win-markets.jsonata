@@ -1,0 +1,103 @@
+/**
+ * 🎯 Component: Table (Must Win markets)
+ * 📍 Used on: PR Pages Upgrade > Must Win
+ * 🔄 Input: value-creation_pr-pages_volume_must-win-markets (datasources only; no external config)
+ * 📤 Output: Table rows (markets + mtd / l3m / ytd from period M, L3M, YTD)
+ * 🔧 Config: centralized in $config below
+ */
+(
+  $config := {
+    "table_header": [
+      { "id": "markets", "title": "Markets", "subtitle": "vs LY" },
+      { "id": "mtd", "title": "Month" },
+      { "id": "l3m", "title": "L3M" },
+      { "id": "ytd", "title": "YTD" }
+    ],
+    "trend": {
+      "up": "positive",
+      "down": "negative"
+    },
+    "variation": {
+      "unit_measure_percent": "%"
+    },
+    "country_display_names": {
+      "BRA": "Brazil",
+      "USA": "United States",
+      "MEX": "Mexico",
+      "CHN": "China",
+      "ZAF": "South Africa",
+      "EUR": "Europe",
+      "KOR": "Korea",
+      "CAN": "Canada",
+      "COL": "Colombia",
+      "ARG": "Argentina",
+      "PER": "Peru",
+      "NGA": "Nigeria",
+      "IND": "India",
+      "DOM": "Dominican Republic",
+      "ECU": "Ecuador"
+    }
+  };
+  $dsKey := $keys(datasources)[0];
+  $data := $lookup(datasources, $dsKey);
+  $count($data) = 0
+    ? { "empty": true }
+    : (
+      $hasNumericVsLy := function($val) {
+        $type($val) = "number"
+      };
+      $cellFromRow := function($row) {
+        $exists($row) and $row
+          ? (
+            $hasNumericVsLy($row.ac_vs_ly)
+              ? {
+                "value": $formatNumber($row.ac_vs_ly, '#,##0.0'),
+                "unitMeasure": $row.comp_unit_of_measure,
+                "trend": $lookup($config.trend, $row.variationDirectionVsLy)
+              }
+              : {
+                "value": "-"
+              }
+          )
+          : {
+            "value": "-"
+          }
+      };
+      $findByPriorityAndPeriod := function($priority, $periodCode) {
+        $data[priorities = $priority and period = $periodCode][0]
+      };
+      $marketsSourceRow := function($priority) {
+        (
+          $m := $findByPriorityAndPeriod($priority, "M");
+          $l3 := $findByPriorityAndPeriod($priority, "L3M");
+          $y := $findByPriorityAndPeriod($priority, "YTD");
+          $m ? $m : ($l3 ? $l3 : $y)
+        )
+      };
+
+      {
+        "header": $config.table_header,
+        "rows": [
+          [
+            $map(
+              $distinct($data.priorities),
+              function($priority) {
+                (
+                  $base := $data[priorities = $priority][0];
+                  {
+                    "markets": {
+                      "value": $priority,
+                      "images": $base.countriesImages
+                    },
+                    "mtd": $cellFromRow($findByPriorityAndPeriod($priority, "M")),
+                    "l3m": $cellFromRow($findByPriorityAndPeriod($priority, "L3M")),
+                    "ytd": $cellFromRow($findByPriorityAndPeriod($priority, "YTD"))
+                  }
+                )
+              }
+            )
+          ]
+        ]
+      }
+    )
+)

@@ -1,0 +1,82 @@
+/**
+ * 🔢 YEAR POWER VS AC EXPORT FORMATTER
+ * 🎯 Component: SimpleBarChart
+ * 📍 Used on: BrandPowerBook Export > Year Power Vs AC chart
+ * 🔄 Input: by-year-power-ac (yearly power data)
+ * 📤 Output: SimpleBarChartData interface
+ * 🔧 Config: connector colors, legend colors/labels, legendPeriod, drThresholdYear
+ */
+(
+  $yearlyKey := "portfolio-brand_brand-power-book_overview_power-performance-trend_by-year-power-ac";
+
+  $config := {
+    "connector": {
+      "background_color": { "up": "#E6F9E6", "down": "#FFE6E6" },
+      "text_color": { "up": "#007800", "down": "#BA0B0B" },
+      "measure": "pp"
+    },
+    "legend": [
+      { "label": "DR not in the survey", "color": "#D3E3EE" },
+      { "label": "Prev. Quarters", "color": "#EDDAB1" },
+      { "label": "AC. Quarter", "color": "#D1A33C" }
+    ],
+    "legendPeriod": "FY",
+    "drThresholdYear": 21
+  };
+
+  $isValidNumber := function($value) { $type($value) = "number" };
+
+  $safeArray := function($maybe) {
+    $exists($maybe) and $type($maybe) = "array" ? $maybe : []
+  };
+
+  $twoDigitYearFromDate := function($isoDate) {
+    $number($fromMillis($toMillis($isoDate), '[Y01]'))
+  };
+
+  $yearlyRaw := $safeArray($lookup(datasources, $yearlyKey));
+  $yearlySorted := $sort($yearlyRaw, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+
+  $count($yearlySorted) = 0
+    ? { "empty": true }
+    : (
+      $countYear := $count($yearlySorted);
+      $acValues := $append([], $map($yearlySorted, function($row) { $row.ac }));
+      $sortedDistinctAc := $sort($distinct($acValues), function($left, $right) { $left > $right });
+      $minValue := $sortedDistinctAc[0] > 0 ? $sortedDistinctAc[0] : $sortedDistinctAc[1];
+      $lastYear := $yearlySorted[$countYear - 1];
+      $prevYear := $yearlySorted[$countYear - 2];
+      $direction := $exists($lastYear.variationDirectionVsLy) ? $lastYear.variationDirectionVsLy : "up";
+
+      {
+        "min": $minValue,
+        "max": $max($acValues),
+        "values": $acValues,
+        "labels": $append([], $map($yearlySorted, function($row) {
+          $formatFyPeriod($row.dt_ini, "prefix")
+        })),
+        "backgroundColor": $append([], $map($yearlySorted, function($row, $index) {
+          $twoDigitYearFromDate($row.dt_ini) <= $config.drThresholdYear
+            ? $config.legend[0].color
+            : $index = $countYear - 1
+              ? $config.legend[2].color
+              : $config.legend[1].color
+        })),
+        "variationCaptions": [],
+        "connector": $countYear >= 2 and $isValidNumber($lastYear.ac_vs_previous_year)
+          ? {
+              "from": $formatFyPeriod($prevYear.dt_ini, "prefix"),
+              "to": $formatFyPeriod($lastYear.dt_ini, "prefix"),
+              "value": $lastYear.ac_vs_previous_year,
+              "backgroundColor": $lookup($config.connector.background_color, $direction),
+              "textColor": $lookup($config.connector.text_color, $direction),
+              "measure": $config.connector.measure
+            }
+          : null,
+        "legend": $config.legend,
+        "legendPeriod": $config.legendPeriod
+      }
+    )
+)

@@ -1,0 +1,100 @@
+/* *
+ * 🏆 GROWTH LEAGUE RANKINGS KA DASHBOARD LEAGUE B FORMATTER
+ * 🎯 Component: KA Dashboard League B Rankings
+ * 📍 Used on: Growth League > Rankings > KA Dashboard League B
+ * 🔄 Input: value-creation_growth-league_rankings_ka-dashboard-league-b data (long format: one row per country per KPI)
+ * 📤 Output: Table format with resolved header subtitles and pivoted rows */
+(
+  $data := $.datasources."value-creation_growth-league_rankings_ka-dashboard-league-b";
+
+  $getSubtitle := function($kpiVariation) {(
+    $item := $filter($data, function($d) { $d.kpi_variation = $kpiVariation })[0];
+    $exists($item) ? $formatPeriod($item.dt_end) : undefined
+  )};
+
+  $getCountryKey := function($row) {
+    $exists($row.country_iso_code_3)
+      ? $row.country_iso_code_3
+      : ($type($row.country) = "string" ? $row.country : "")
+  };
+
+  $mapKpiId := function($kpiVariation) {
+    $kpiVariation = "total_abi" ? "overall_results" : $kpiVariation
+  };
+
+  $kpiIds := ["overall_results", "service_level", "maco_hl", "share_of_shelf_cooler", "market_share", "advantage"];
+  $defaultKpis := $reduce($kpiIds, function($acc, $kpi) {
+    $merge([$acc, { ($kpi): { "value": "-" } }])
+  }, {});
+
+  $header := [
+    {
+      "id": "leaderboard",
+      "title": "Leaderboard",
+      "children": [
+        {"id": "rank", "title": "Rank"},
+        {"id": "country", "title": "Country"}
+      ]
+    },
+    {
+      "id": "ka_dashboard",
+      "title": "KA Dashboard",
+      "children": [
+        {"id": "overall_results", "title": "Total", "subtitle": $getSubtitle("overall_results")},
+        {"id": "advantage", "title": "Advantage", "subtitle": $getSubtitle("advantage")},
+        {"id": "service_level", "title": "Service Level", "subtitle": $getSubtitle("service_level")},
+        {"id": "share_of_shelf_cooler", "title": "Share of Shelf/Cooler", "subtitle": $getSubtitle("share_of_shelf_cooler")},
+        {"id": "maco_hl", "title": "MACO/hl", "subtitle": $getSubtitle("maco_hl")},
+        {"id": "market_share", "title": "Market Share", "subtitle": $getSubtitle("market_share")}
+    ]
+    }
+  ];
+
+  $countries := $distinct($map($data, function($row) { $getCountryKey($row) }));
+
+  $pivotedRows := $map($countries, function($countryName) {(
+    $countryRows := $append([], $filter($data, function($row) { $getCountryKey($row) = $countryName }));
+    $firstRow := $countryRows[0];
+    $flag := $exists($firstRow.country.imageIcon)
+      ? $firstRow.country.imageIcon
+      : ($exists($firstRow.country_images.imageIcon) ? $firstRow.country_images.imageIcon : $firstRow.country_image);
+
+    $kpiValues := $reduce($countryRows, function($acc, $row) {
+      (
+        $isKpiValid := $type($row.score) = "number";
+        $merge([$acc, {
+          ($mapKpiId($row.kpi_variation)): { 
+            "unitMeasure": $isKpiValid ? "%" : "", 
+            "value": $isKpiValid ? $row.score : "-"
+          }
+        }])
+      )
+    }, {});
+
+    $merge([
+      {
+        "rank": { "value": $string($firstRow.country_ranking) },
+        "country": { "value": $countryName, "img": $flag }
+      },
+      $defaultKpis,
+      $kpiValues
+    ])
+  )});
+
+  $sortedRows := $sort($pivotedRows, function($a, $b) {
+    $number($a.rank.value) > $number($b.rank.value)
+  });
+
+  $splits := [
+    ["leaderboard"],
+    ["ka_dashboard"]
+  ];
+
+  {
+    "table": {
+      "rows": [[$sortedRows]],
+      "header": $header,
+      "splits": $splits
+    }
+  }
+)

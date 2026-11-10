@@ -1,0 +1,30 @@
+import { PerformanceToolRelationCollector } from "@domain/config/presets/performance-tool/performance-tool.relation-collector";
+export declare class PerformanceToolFilterContext {
+    private enabledKpis;
+    private kpiRefreshDates;
+    private zones;
+    private countries;
+    private regions;
+    private readonly collector;
+    initialize(enabledKpis: readonly string[], kpiRefreshDates?: Record<string, string>): void;
+    getCollector(): PerformanceToolRelationCollector;
+    addZone(zone: string): void;
+    addCountry(iso: string, name: string, zone: string): void;
+    addRegion(country: string, region: string): void;
+    toArray(): Record<string, unknown>;
+    private buildRegion;
+    private buildKpisFilter;
+    private buildSortedList;
+    private buildKpiRelations;
+    private formatRelations;
+    private formatZoneCountries;
+    private formatBrandClassification;
+    private formatAllBrands;
+    private formatNested;
+    private formatGlobalBrands;
+    private formatGrowthLevers;
+    private formatGlBrandClassification;
+    private buildStringFormat;
+    private mapToStringFormat;
+    private mapNestedToStringFormat;
+}

@@ -1,0 +1,161 @@
+(
+  $large := datasources.large ?? [];
+  $small := datasources.small ?? [];
+  $isEmpty := $count($large) = 0 and $count($small) = 0;
+  $config := {
+    "variation": {
+      "unit_measure_percent": "%"
+    },
+    "comparisons": {
+      "brand": [
+        {
+          "title": "vs LY",
+          "column": "vs_ly",
+          "unit_of_measure": "comp_unit_of_measure"
+        },
+        {
+          "title": "Vol. vs LY",
+          "column": "vol_vs_ly"
+        },
+        {
+          "title": "Vol. Weight",
+          "column": "vol_weight"
+        }
+      ],
+      "sub_brand": [
+        {
+          "title": "vs LY",
+          "column": "vs_ly",
+          "unit_of_measure": "comp_unit_of_measure"
+        },
+        {
+          "title": "Vol. vs LY",
+          "column": "vol_vs_ly"
+        }
+      ],
+      "country": [
+        {
+          "title": "vs LY",
+          "column": "vs_ly",
+          "unit_of_measure": "comp_unit_of_measure"
+        },
+        {
+          "title": "Vol. vs LY",
+          "column": "vol_vs_ly"
+        },
+        {
+          "title": "Vol. Weight",
+          "column": "vol_weight"
+        }
+      ],
+      "brand_eur": [
+        {
+          "title": "vs LY",
+          "column": "vs_ly",
+          "unit_of_measure": "comp_unit_of_measure"
+        },
+        {
+        "title": "Vol. vs LY",
+        "column": "vol_vs_ly"
+        },
+        {
+        "title": "Vol. Weight",
+        "column": "vol_weight"
+        }
+      ]
+    }
+  };
+  $isValidNumber := function($val) {
+    $exists($val) and $type($val) = "number" and $string($val) != "NaN" and $abs($val) != 1/0
+  };
+  $defaultUnitMeasure := $config.variation.unit_measure_percent;
+  $comparisonCell := function($d, $cdef) {(
+    $field := $cdef.column;
+    $raw := $lookup($d, $field);
+    $isRawValueValid := $not($exists($raw) = false or $type($raw) != "number");
+
+    $fallbackUnit := $d.unit_of_measure ?? $defaultUnitMeasure;
+    $configuredUnitField := $cdef.unit_of_measure;
+    $resolvedUnit := $lookup($d, $configuredUnitField) ?? $fallbackUnit;
+    {
+      "value": $formatValue($raw),
+      "measure": $isRawValueValid ?  $resolvedUnit : "",
+      "trend": $cdef.title = "Vol. Weight" ? "neutral" : ($isRawValueValid ? $getTrend($raw, $lookup($d, $field & "_direction")) : "")
+    }
+  )};
+
+  $build := function($data) {(
+    $hasValidData := $count($data) > 0 and $exists($data.delta[$ != null][0]);
+    $hasValidData = false
+    ? {}
+    : (
+      $waterfallType := $data[0].waterfall_type ?? "country";
+      $comparisonDefs := $lookup($config.comparisons, $waterfallType);
+      $lastIdx := $count($data) - 1;
+      $values := $map($data, function($d, $i) {(
+        ($i = 0 or $i = $lastIdx)
+          ? ($isValidNumber($d.ac) ? $d.ac : 0)
+          : ($isValidNumber($d.delta) ? $d.delta : 0)
+      )});
+      $formattedValues := $map($values, function($v) { $formatCompactNumber($v) });
+      $labels := $map($data.label_value, function($l) {(
+        $parts := $split($l, "\n");
+        $count($parts) > 1 ? $parts : $l
+      )});
+      $comparisonLineWithArrays := $map($comparisonDefs, function($cdef) {(
+        $rowCells := $map($data, function($d) { $comparisonCell($d, $cdef) });
+        {
+          "title": $cdef.title,
+          "data": $type($rowCells) = "array" ? $rowCells : [$rowCells]
+        }
+      )});
+
+      {
+        "values": $type($values) = "array" ? $values : [$values],
+        "labels": $type($labels) = "array" ? $labels : [$labels],
+        "formattedData": [
+          [$formattedValues]
+        ],
+        "comparisonLine": {
+          "data": [$comparisonLineWithArrays]
+        },
+        "images": {
+          "data": [
+            $map($data, function($d) {
+              (
+                $labelParts := $split($d.label_value, "\n");
+                $displayLabel := $count($labelParts) > 1 ? $labelParts[0] : $d.label_value;
+                $hasBadgeValue := $exists($d.badge_value) and $d.badge_value != null and $d.badge_value != "";
+                $badgeFlag := $hasBadgeValue ? {
+                  "src": $d.badge_value,
+                  "alt": $displayLabel
+                } : undefined;
+                {
+                  "title": $displayLabel,
+                  "mainBrand": {
+                    "src": $d.image_value,
+                    "alt": $displayLabel
+                  },
+                  "badgeFlag": $badgeFlag
+                }
+              )
+            })
+          ]
+        }
+      }
+    )
+  )};
+
+  $isEmpty
+  ? { "empty": true }
+  : (
+    $largeResult := $build($large);
+    $smallResult := $build($small);
+    $hasLargeData := $count($keys($largeResult)) > 0;
+    $hasSmallData := $count($keys($smallResult)) > 0;
+    $hasLargeData or $hasSmallData ? {
+      "large": $largeResult,
+      "small": $smallResult
+    } : { "empty": true }
+  )
+)

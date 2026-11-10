@@ -1,0 +1,97 @@
+/**
+ * 🔢 YEAR POWER AC FORMATTER
+ * 🎯 Component: SimpleBarChart (year-by-year AC)
+ * 📍 Used on: BrandPowerBook > Overview > Year Power AC
+ * 🔄 Input: year-by-year-power-ac-power-mix + by-year-power-ac
+ * 📤 Output: SimpleBarChartData (values, labels, variationCaptions, connector)
+ */
+(
+  $dsKeys := $keys(datasources);
+  $powerMixRows := $lookup(datasources, $dsKeys[0]);
+  $yearAcRows := $lookup(datasources, $dsKeys[1]);
+
+  $config := {
+    "barColors": { "default": "#EDDAB1", "latest": "#D1A33C" },
+    "connector": {
+      "backgroundColor": { "up": "#E6F9E6", "down": "#FFE6E6" },
+      "textColor": { "up": "#007800", "down": "#BA0B0B" },
+      "measure": "pp"
+    },
+    "powerMixCaption": {
+      "title": "Mix of Total Power",
+      "subtitle": "%",
+      "unit_of_measure": "%",
+      "valueColor": "#1414148F"
+    }
+  };
+
+  $labelFromRow := function($row) {
+    (
+      $endMonth := $number($fromMillis($toMillis($row.dt_end), "[M01]"));
+      $endQuarter := $endMonth <= 3 ? 1 : $endMonth <= 6 ? 2 : $endMonth <= 9 ? 3 : 4;
+      $yy := $substring($fromMillis($toMillis($row.dt_ini), "[Y0001]"), 2, 2);
+      $endQuarter = 4 ? "FY'" & $yy : "Q" & $endQuarter & "'" & $yy
+    )
+  };
+
+  /* $sort comparator is boolean: true swaps → ascending dates when true means left is after right */
+  $sortedYearAc := $sort($yearAcRows, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+  $sortedPowerMix := $sort($powerMixRows, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+
+  $lastIndex := $count($sortedYearAc) - 1;
+  $lastRow := $count($sortedYearAc) > 0 ? $sortedYearAc[$lastIndex] : null;
+
+  $mixValue := function($mixRow) {
+    $exists($mixRow.value) and $mixRow.value != null ? $mixRow.value : $mixRow.ac
+  };
+
+  $count($sortedYearAc) = 0
+    ? { "empty": true }
+    : $merge([
+      {
+        "values": $map($sortedYearAc, function($row) { $row.ac }),
+        "labels": $map($sortedYearAc, function($row) { $labelFromRow($row) }),
+        "backgroundColor": $map(
+          $sortedYearAc,
+          function($row, $index) {
+            $index = $lastIndex ? $config.barColors.latest : $config.barColors.default
+          }
+        ),
+        "variationCaptions": $count($sortedPowerMix) = 0
+          ? []
+          : [
+              {
+                "title": $config.powerMixCaption.title,
+                "subtitle": $config.powerMixCaption.subtitle,
+                "data": $map(
+                  $sortedPowerMix,
+                  function($mixRow) {
+                    {
+                      "value": $mixValue($mixRow),
+                      "unit_of_measure": $config.powerMixCaption.unit_of_measure,
+                      "color": $config.powerMixCaption.valueColor
+                    }
+                  }
+                )
+              }
+            ],
+        "legendPeriod": "FY"
+      },
+      $count($sortedYearAc) >= 2 and $exists($lastRow)
+        ? {
+          "connector": {
+            "from": $labelFromRow($sortedYearAc[$lastIndex - 1]),
+            "to": $labelFromRow($lastRow),
+            "value": $lastRow.ac_vs_previous_year,
+            "backgroundColor": $lookup($config.connector.backgroundColor, $lastRow.ac_vs_previous_year >= 0 ? "up" : "down"),
+            "textColor": $lookup($config.connector.textColor, $lastRow.ac_vs_previous_year >= 0 ? "up" : "down"),
+            "measure": $config.connector.measure
+          }
+        }
+        : {}
+    ])
+)

@@ -1,0 +1,4 @@
+import MaterialButton from "./MaterialButton/MaterialButton";
+import { MaterialButtonProps, MaterialButtonDefaultProps } from "./MaterialButton/MaterialButtonProps";
+export { MaterialButton, MaterialButtonDefaultProps };
+export type { MaterialButtonProps };

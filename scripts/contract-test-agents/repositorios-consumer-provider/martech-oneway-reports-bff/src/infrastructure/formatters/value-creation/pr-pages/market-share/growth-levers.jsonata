@@ -1,0 +1,58 @@
+/* *
+ * 🔢 Growth Levers Table (Market Share)
+ * 🎯 Component: Table
+ * 📍 Used on: Value Creation > PR Pages > Market Share > Growth Levers
+ * 🔄 Input: value-creation_pr-pages_market-share_growth-levers
+ * 📤 Output: Table with growth_lever rows and MTD/L3M/YTD columns */
+(
+  $dsKey := $keys($.datasources)[0];
+  $data := $lookup($.datasources, $dsKey);
+  $isValidNumber := function($value) { $type($value) = "number" };
+  $growthLeversOrder := ["Superior Core", "Lead Premium", "Balanced Choices", "Beyond Beer"];
+  $prioritiesOrder := ["Local Core Plus", "Local Prem/SP"];
+  $hasGrowthLevers := $count($filter($growthLeversOrder, function($lever) { $count($data[growth_lever = $lever]) > 0 })) > 0;
+  $config := {
+    "unitMeasure": "pp",
+    "directionColors": { "up": "#007800", "down": "#B91C1C" },
+    "growthLeversOrder": $append($growthLeversOrder, $prioritiesOrder),
+    "headers": [
+      { "id": "priorities", "title": $hasGrowthLevers ? "Growth Levers" : "Priorities", "subtitle": "vs LY" },
+      { "id": "mtd", "title": "Month" },
+      { "id": "l3m", "title": "L3M" },
+      { "id": "ytd", "title": "YTD" }
+    ]
+  };
+  $hasAnyValidValue := $count($filter(
+    $data,
+    function($row) { $isValidNumber($row.mtd_vs_ly_pp) or $isValidNumber($row.l3m_vs_ly_pp) or $isValidNumber($row.ytd_vs_ly_pp) }
+  ))
+    > 0;
+  $isEmpty := $count($data) = 0 or $not($hasAnyValidValue);
+  $getDirectionBySign := function($value) { $isValidNumber($value) and $value < 0 ? $config.directionColors.down : $config.directionColors.up };
+  $buildCell := function($value) {
+    $isValidNumber($value)
+      ? { "value": $value, "unitMeasure": $config.unitMeasure, "variationDirection": $getDirectionBySign($value) }
+      : { "value": "-" }
+  };
+  $orderedLevers := $filter($config.growthLeversOrder, function($lever) { $count($data[growth_lever = $lever]) > 0 });
+  $rows := $map(
+    $orderedLevers,
+    function($lever) {
+      (
+        $row := $data[growth_lever = $lever][0];
+        {
+          "priorities": { "key": $lever, "value": $lever },
+          "ytd": $buildCell($row.ytd_vs_ly_pp),
+          "l3m": $buildCell($row.l3m_vs_ly_pp),
+          "mtd": $buildCell($row.mtd_vs_ly_pp)
+        }
+      )
+    }
+  );
+  $isEmpty
+    ? { "empty": true }
+    : {
+      "rows": [[$rows]],
+      "header": $config.headers
+    }
+)

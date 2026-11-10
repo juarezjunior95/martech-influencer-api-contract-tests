@@ -1,0 +1,121 @@
+/**
+ * 🔢 VALUE HOME GROWTH LEVERS FORMATTER
+ * 🎯 Component: Growth Lever Cards (Superior Core, Lead Premium, Balanced Choices, Beyond Beer)
+ * 📍 Used on: Value Home > Growth Levers
+ * 🔄 Input: superior-core, lead-premium, balanced-choices, beyond-beer (per-card datasources)
+ * 📤 Output: Object with 4 cards (always); each card has title, rows, and noticeMessage when empty
+ * 🔧 Config: titles, rowLabels, measure, direction (trend), noticeMessage
+ */
+
+(
+  $growthLeversData := $count(datasources.growth_levers) > 0 ? datasources.growth_levers : [];  
+  /* ─── Config ─── */
+  $config := {
+    "cardConfigs": {
+      "superior-core": {
+        "title": "Superior Core",
+        "growth_lever": "Superior Core"
+      },
+      "lead-premium": {
+        "title": "Lead Premium",
+        "growth_lever": "Lead Premium"
+      },
+      "balanced-choices": {
+        "title": "Balanced Choices",
+        "growth_lever": "Balanced Choices"
+      },
+      "beyond-beer": {
+        "title": "Beyond Beer",
+        "growth_lever": "Beyond Beer"
+      }
+    },
+    "rowLabels": {
+      "volWeight": "Vol. Weight",
+      "volVsLy": "Vol. vs LY"
+    },
+    "direction": { "up": "positive", "down": "negative" },
+    "noticeMessage": "Data not available."
+  };
+
+  /* ─── Helpers ─── */
+  $isValidNumber := function($val) { $type($val) = "number" };
+  $formatValue := function($value) {
+    $exists($value) and $isValidNumber($value) ? $formatNumber($value, "#,##0.0") : "-"
+  };
+  $getTrend := function($direction) {
+    $exists($direction) and $lookup($config.direction, $direction) ? $lookup($config.direction, $direction) : "positive"
+  };
+
+  /* Card definitions: [datasourceKey, outputKey] */
+  $cardDefs := [
+    ["superior-core", "superiorCore"],
+    ["lead-premium", "leadPremium"],
+    ["balanced-choices", "balancedChoices"],
+    ["beyond-beer", "beyondBeer"]
+  ];
+
+  /* Build one card from datasource key and output key */
+  $buildCard := function($dsKey) {
+    (
+      $cardConfig := $lookup($config.cardConfigs, $dsKey);
+      $data := $growthLeversData[growth_lever = $cardConfig.growth_lever];
+      $hasData := $exists($data) and $count($data) > 0;
+      
+
+      $hasData ?
+        $buildCardData($data, $cardConfig)
+        : 
+        {
+          "title": $cardConfig.title,
+          "rows": [],
+          "noticeMessage": $config.noticeMessage
+        }
+
+    )
+  };
+
+  $buildCardData := function($data, $cardConfig) {
+    (
+      $item := $data[0];
+      $title := $cardConfig.title;
+      $rows := [
+            {
+              "label": $lookup($config.rowLabels, "volWeight"),
+              "bigNumberData": [
+                {
+                  "bigNumber": {
+                    "value": $formatValue($item.volume_weight),
+                    "measure": $item.unit_of_measure
+                  }
+                }
+              ]
+            },
+            {
+              "label": $lookup($config.rowLabels, "volVsLy"),
+              "bigNumberData": [
+                {
+                  "bigNumber": {
+                    "value": $formatValue($item.ac_vs_ly),
+                    "measure":$item.comp_unit_of_measure,
+                    "trend": $getTrend($item.variationDirectionVsLy)
+                  }
+                }
+              ]
+            }
+          ];
+      { 
+        "title": $title, 
+        "rows": $rows 
+      };
+    )
+  };
+
+  /* Always return four cards as a single object */
+  $reduce(
+    $cardDefs,
+    function($acc, $pair) {
+      $merge([$acc, { ($pair[1]): $buildCard($pair[0]) }])
+    },
+    {}
+  )
+)

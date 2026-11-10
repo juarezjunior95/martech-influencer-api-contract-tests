@@ -1,0 +1,178 @@
+/**
+ * 🔢 PORTFOLIO BRAND HOME FORMATTER
+ * 🎯 Component: Portfolio Brand Home 
+ * 📍 Used on: Portfolio Brand > Home
+ */
+
+(
+  $dsKeys := $keys(datasources);
+  $dsName := $dsKeys[0];
+  $data := $lookup(datasources, $dsName);
+  
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number" ?
+      $formatNumber($value, '#,##0.0')
+      : "-"
+  };
+  
+  $formatSecondaryValue := function($value) {
+    $exists($value) and $type($value) = "number" ?
+      $formatNumber($value, '#,##0.0')
+      : "-"
+  };
+  
+  $formatTrend := function($direction) {
+    $exists($direction) and $direction != "" ?
+      ($direction = "up" ? "positive" : "negative")
+      : undefined
+  };
+  
+  $createBigNumber := function($value, $measure, $direction) {
+    (
+      $trendValue := $formatTrend($direction);
+      $exists($trendValue) ? 
+        {
+          "value": $formatValue($value),
+          "measure": $measure,
+          "trend": $trendValue
+        } : 
+        {
+          "value": $formatValue($value),
+          "measure": $measure
+        }
+    )
+  };
+  
+  $formatQuarterPeriod := function($dateStr, $suffix) {
+    (
+      $exists($dateStr) and $dateStr != "" ?
+        (
+          $date := $toMillis($dateStr, "[Y0001]-[M01]-[D01]T[H01]:[m01]:[s01].[f001]Z");
+          $month := $number($fromMillis($date, "[M01]"));
+          $year := $fromMillis($date, "[Y01]");
+          $quarter := $ceil($month / 3);
+          "Q" & $string($quarter) & "'" & $year & " " & $suffix
+        )
+      : ""
+    )
+  };
+  
+  $contains($dsName, "increase-brand-power") ? (
+    $itemsWithVariation := $filter($data, function($item) { $item.ac_vs_ly != null });
+    $lastWithVariation := $itemsWithVariation[-1];
+    $itemsWithoutVariation := $filter($data, function($item) { $item.ac_vs_ly = null });
+    $chartData := $count($itemsWithoutVariation) > 0 
+      ? $itemsWithoutVariation 
+      : $filter($data, function($item, $index) { 
+          $item.ac_vs_ly = null or $index < $count($data) - $count($itemsWithVariation) 
+        });
+    
+    $count($data) = 0
+      ? { "empty": true }
+      : $exists($lastWithVariation) ? {
+        "title": "ABI Brand Power",
+        "period": $formatQuarterPeriod($lastWithVariation.dt_end, $lastWithVariation.vs_ly_label_suffix),
+        "bigNumberData": [
+          {
+            "bigNumber": $createBigNumber(
+              $lastWithVariation.ac_vs_ly,
+              $lastWithVariation.comp_unit_of_measure,
+              $lastWithVariation.variationDirectionVsLy
+            ),
+            "comparison": { 
+              "label": "vs", 
+              "value": "LY" 
+            },
+            "secondaryInfo": { 
+              "label": "[ "& $lastWithVariation.unit_of_measure &" ]", 
+              "value": $formatSecondaryValue($lastWithVariation.ac)
+            }
+          }
+        ],
+        "chartLineData": $map($chartData, function($item) { $item.ac })
+      } : {
+        "title": "ABI Brand Power",
+        "period": $formatQuarterPeriod($data[-1].dt_end, $data[-1].vs_ly_label_suffix),
+        "chartLineData": $map($data, function($item) { $item.ac })
+      }
+  )
+  : $contains($dsName, "portfolio-strategy") ? (
+    $volumeData := $filter($data, function($item) { $lowercase($item.kpi_name) = "volume" })[0];
+    $powerData := $filter($data, function($item) { $lowercase($item.kpi_name) = "power" })[0];
+    
+    $count($data) = 0
+      ? { "empty": true }
+      : [
+        $exists($volumeData) ? {
+          "title": "Megabrands Volume",
+          "period": $formatQuarterPeriod($volumeData.dt_end, $volumeData.period),
+          "bigNumberData": [
+            {
+              "bigNumber": $createBigNumber(
+                $volumeData.ac_vs_ly,
+                $volumeData.comp_unit_of_measure,
+                $volumeData.variationDirectionVsLy
+              ),
+              "comparison": { 
+                "label": "vs", 
+                "value": "LY" 
+              },
+              "secondaryInfo": { 
+                "label": "[ " & $volumeData.unit_of_measure &  " ]", 
+                "value": $formatSecondaryValue($volumeData.ac)
+              }
+            }
+          ]
+        },
+        $exists($powerData) ? {
+          "title": "Megabrands Brand Power",
+          "period": $formatQuarterPeriod($powerData.dt_end, $powerData.period),
+          "bigNumberData": [
+            {
+              "bigNumber": $createBigNumber(
+                $powerData.ac_vs_ly,
+                $powerData.comp_unit_of_measure,
+                $powerData.variationDirectionVsLy
+              ),
+              "comparison": { 
+                "label": "vs", 
+                "value": "LY" 
+              },
+              "secondaryInfo": { 
+                "label": "[ " & $powerData.unit_of_measure & " ]", 
+                "value": $formatSecondaryValue($powerData.ac)
+              }
+            }
+          ]
+        }
+      ]
+  )
+  : $contains($dsName, "strategic-innovation-pillars") ? (
+    $lastItem := $data[-1];
+    
+    $count($data) = 0
+      ? { "empty": true }
+      : {
+        "title": "Brands Superior",
+        "period": $formatQuarterPeriod($lastItem.dt_end, $lastItem.vs_ly_label_suffix),
+        "bigNumberData": [
+          {
+            "bigNumber": $createBigNumber(
+              $lastItem.ac_vs_ly,
+              $lastItem.comp_unit_of_measure,
+              $lastItem.variationDirectionVsLy
+            ),
+            "comparison": { 
+              "label": "vs", 
+              "value": "LY" 
+            },
+            "secondaryInfo": { 
+              "label": "[ " & $lastItem.unit_of_measure & " ]", 
+              "value": $formatSecondaryValue($lastItem.ac)
+            }
+          }
+        ]
+      }
+  )
+  : { "empty": true }
+)

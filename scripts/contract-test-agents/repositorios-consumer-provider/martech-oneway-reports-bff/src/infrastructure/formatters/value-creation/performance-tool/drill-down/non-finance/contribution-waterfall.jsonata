@@ -1,0 +1,241 @@
+(
+  $large := datasources.large ?? [];
+  $small := datasources.small ?? [];
+  $isEmpty := $count($large) = 0 and $count($small) = 0;
+
+  $config := {
+    "variation": {
+      "unit_measure_percent": "%"
+    },
+    "trend": {
+      "up": "positive",
+      "down": "negative",
+      "rule": "standard",
+      "include_zero": false
+    }
+  };
+
+  /* -------------------------
+   * Helpers
+   * ------------------------- */
+
+  $formatCompact := function($v) {
+    $type($v) = "number"
+    ?
+      (
+        $abs := $abs($v);
+        $sign := $v < 0 ? "-" : "";
+
+        $abs >= 1000000000 ? $sign & $formatNumber($abs/1000000000,"0.0") & "B" :
+        $abs >= 1000000    ? $sign & $formatNumber($abs/1000000,"0.0") & "M" :
+        $abs >= 1000       ? $sign & $formatNumber($abs/1000,"0.0") & "K" :
+                             $formatNumber($v,"0.0")
+      )
+    : "-"
+  };
+
+  $formatValue := function($v) {
+    $type($v) = "number" ? $formatNumber($v,"#,##0.0") : "-"
+  };
+
+  $formatTwoDecimals := function($v) {
+    $type($v) = "number" ? $formatNumber($v,"0.00") : "0"
+  };
+
+  $quarter := function($date) {
+    $exists($date)
+    ?
+      (
+        $y := $substring($date,0,4);
+        $m := $number($substring($date,5,2));
+        "Q" &
+        (
+          $m <= 3 ? 1 :
+          $m <= 6 ? 2 :
+          $m <= 9 ? 3 : 4
+        ) &
+        "'" &
+        $substring($y,2,2)
+      )
+    : "-"
+  };
+
+$ytdFormat := function($date) {
+    $exists($date)
+    ?
+      (
+        $y := $substring($date,0,4);
+        $m := $number($substring($date,5,2));
+        "YTD" &
+        "'" &
+        $substring($y,2,2)
+      )
+    : "-"
+  };
+
+  $trend := function($value) {
+    $getColorUpDown(
+      $value,
+      $config.trend.up,
+      $config.trend.down,
+      {
+        "rule": $config.trend.rule,
+        "includeZero": $config.trend.include_zero,
+        "nonNumericColor": $config.trend.down
+      }
+    )
+  };
+
+  $getImageUrl := function($d, $imageConfig) {
+    $exists($imageConfig) and $exists($imageConfig.object_key)
+      ? $lookup($lookup($d, $imageConfig.object_key), $imageConfig.image_key)
+      : ""
+  };
+
+  /* -------------------------
+   * Builder
+   * ------------------------- */
+  $build := function($data) {(
+    $hasValidData := $count($data) > 0 and $exists($data.ac_delta[$type($) = "number" and $ != 0][0]);
+    $hasValidData = false
+    ? {}
+    :
+    (
+      $first := $data[0];
+      $last  := $data[$count($data)-1];
+      $isQTD := $contains($first.period ?? "", "QTD");
+      $wf    := $first.waterfall_filter ?? "";
+
+      /* Detect sub_brand type from data */
+      $sampleData := $count($data) > 1 ? $data[1] : $first;
+      $isSubBrand := $exists($sampleData.sub_brand) and $sampleData.sub_brand != "";
+
+      $values := $data.($exists(ac_delta) and $type(ac_delta) = "number" ? ac_delta : 0);
+      $len := $count($values);
+      $formattedValues := $map($values, function($v, $i) {
+        $i = 0 or $i = $len - 1
+          ? $formatValue($v)
+          : $formatTwoDecimals($v)
+      });
+
+      $periodLabel := function($d, $i) {
+        $i = 0
+          ? ($isQTD ? $quarter($first.dt_end) : $ytdFormat($first.dt_end))
+          : (
+              $i = $count($data)-1
+              ? ($isQTD ? $quarter($last.dt_end) : $ytdFormat($last.dt_end))
+              : ($d.label_value ?? "")
+            )
+      };
+
+      /* For sub_brand, use step_name for labels; otherwise use periodLabel */
+      $labels := $isSubBrand
+        ? $map($data, function($d, $i) { $d.step_name ?? "" })
+        : $map($data, function($d, $i) { $periodLabel($d, $i) });
+
+      $comparison := $map($data, function($d){
+        {
+          "power": {
+            "value": $formatValue($d.ac),
+            "measure": "",
+            "trend": $trend($d.ac)
+          },
+          "vs_ly": {
+            "value": $formatValue($d.ac_vs_ly),
+            "measure": $d.comp_unit_of_measure ?? $config.variation.unit_measure_percent,
+            "trend": $trend($d.ac_vs_ly)
+          },
+          "vs_lq": {
+            "value": $formatValue($d.ac_vs_lq),
+            "measure": $d.comp_unit_of_measure ?? $config.variation.unit_measure_percent,
+            "trend": $trend($d.ac_vs_lq)
+          },
+          "nr_contribution": {
+            "value": $formatValue($d.nr_weight),
+            "measure": ($exists($d.nr_weight) and $type($d.nr_weight) = "number" and $d.nr_weight > 0) ? ($d.unit_of_measure ?? $config.variation.unit_measure_percent) : ""
+          }
+        }
+      });
+
+      $comparisonLine :=
+        $wf = "country"
+        ? (
+            $isQTD
+            ? [
+                { "title": "Absolute Power", "data": $comparison.power },
+                { "title": "vs LY", "data": $comparison.vs_ly },
+                { "title": "vs LQ", "data": $comparison.vs_lq },
+                { "title": "NR Weight", "data": $comparison.nr_contribution }
+              ]
+            : [
+                { "title": "Absolute Power", "data": $comparison.power },
+                { "title": "vs LY", "data": $comparison.vs_ly },
+                { "title": "NR Weight", "data": $comparison.nr_contribution }
+              ]
+          )
+        : $wf = "portfolio" or $wf = "brand"
+        ? (
+            $isQTD
+            ? [
+                { "title": "Absolute Power", "data": $comparison.power },
+                { "title": "vs LY", "data": $comparison.vs_ly },
+                { "title": "vs LQ", "data": $comparison.vs_lq }
+              ]
+            : [
+                { "title": "Absolute Power", "data": $comparison.power },
+                { "title": "vs LY", "data": $comparison.vs_ly }
+              ]
+          )
+        : [
+            { "title": "Absolute Power", "data": $comparison.power },
+            { "title": $isQTD ? "vs LQ" : "vs LY", "data": $comparison.vs_ly },
+            { "title": "NR Weight", "data": $comparison.nr_contribution }
+          ];
+
+      $comparisonLineWithArrays := $map($comparisonLine, function($item) {
+        { "title": $item.title, "data": $type($item.data) = "array" ? $item.data : [$item.data] }
+      });
+
+      {
+        "values": $type($values) = "array" ? $values : [$values],
+        "labels": $type($labels) = "array" ? $labels : [$labels],
+        "formattedData": [
+          [$formattedValues]
+        ],
+        "comparisonLine": {
+          "data": $comparisonLineWithArrays
+        },
+        "images": {
+          "data": $map($data, function($d,$i) {(
+            $isTotal := $i = 0 or $i = $count($data) - 1;
+            $title := $isSubBrand ? ($d.step_name ?? "") : $periodLabel($d, $i);
+            $imgSrc := $isSubBrand
+              ? ($isTotal ? $getImageUrl($d, { "object_key": "brand", "image_key": "imageSquare" }) : "")
+              : ($d.image_value ?? "");
+            $altText := $isSubBrand ? ($d.step_name ?? "") : ($d.label_value ?? "");
+            {
+              "mainBrand": {
+                "src": $imgSrc,
+                "alt": $altText
+              },
+              "title": $title
+            }
+          )})
+        }
+      }
+    )
+  )};
+
+  $isEmpty
+  ? { "empty": true }
+  : (
+      $largeResult := $build($large);
+      $smallResult := $build($small);
+      $hasLargeData := $count($keys($largeResult)) > 0;
+      $hasSmallData := $count($keys($smallResult)) > 0;
+      $hasLargeData or $hasSmallData ? {
+        "large": $largeResult,
+        "small": $smallResult
+      } : { "empty": true }
+    )
+)

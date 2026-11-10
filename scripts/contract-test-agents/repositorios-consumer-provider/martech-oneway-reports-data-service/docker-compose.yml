@@ -1,0 +1,61 @@
+services:
+
+  postgres:
+    image: postgres:16.10-alpine
+    container_name: martech-oneway-reports-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-kpis}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    entrypoint: >
+      sh -c "
+      docker-entrypoint.sh postgres &
+      until pg_isready -U ${POSTGRES_USER:-postgres}; do sleep 1; done &&
+      psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DATABASE:-kpis} -c 'CREATE SCHEMA IF NOT EXISTS reporting;' &&
+      psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DATABASE:-kpis} -c 'GRANT USAGE ON SCHEMA reporting TO ${POSTGRES_USER:-postgres};' &&
+      psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DATABASE:-kpis} -c 'GRANT CREATE ON SCHEMA reporting TO ${POSTGRES_USER:-postgres};' &&
+      wait
+      "
+    networks:
+      - backend
+      - martech-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  martech-oneway-reports-data-service:
+    image: node:lts-alpine
+    env_file: .env
+    ports:
+      - "3030:3030"
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: >
+      sh -c "npm i && npm run start:dev"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - martech-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  backend:
+    driver: bridge
+  # External network shared between microservices
+  martech-network:
+    external: true
+ 

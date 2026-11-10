@@ -1,0 +1,127 @@
+/**
+ * INNOVATION HOME BIG NUMBERS FORMATTER
+ * Component: Innovation Home - Big Numbers
+ * Used on: Innovation > Home
+ */
+(
+  $portfolioHealthData := datasources."innovation_innovation_overview_portfolio-health-phi";
+  $packPriceData := datasources."strategic-innovation-pillars-pack-price";
+  $brandRenovationData := datasources."strategic-innovation-pillars-renovation";
+  $newInnovationsData := datasources."strategic-innovation-pillars-new-opportunities";
+
+  /* Get the most recent item from each datasource (sorted by dt_end descending) */
+  $phi := $portfolioHealthData[level_1 = "innovation"][];
+  $packPriceLast := ($sort($packPriceData, function($a, $b) { $a.dt_end < $b.dt_end }))[0];
+  $brandRenovationLast := ($sort($brandRenovationData, function($a, $b) { $a.dt_end < $b.dt_end }))[0];
+  $newInnovationsLast := ($sort($newInnovationsData, function($a, $b) { $a.dt_end < $b.dt_end }))[0];
+
+  /* Format value - returns "-" for null/undefined values */
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number" ?
+      $formatNumber($value, '#,##0.0')
+      : "-"
+  };
+
+  /* Map direction to trend: up -> positive, down -> negative, otherwise empty */
+  $mapTrend := function($direction) {
+    $direction = "up" ? "positive" : 
+    $direction = "down" ? "negative" : ""
+  };
+
+  /* Check if value is valid (not null/undefined) */
+  $hasValidValue := function($value) {
+    $exists($value) and $type($value) = "number"
+  };
+
+  /* PHI bigNumber value - use ac_vs_ly if valid, otherwise fallback to ac */
+  $phiBigNumberValue := $hasValidValue($phi.ac_vs_ly) ? $phi.ac_vs_ly : $phi.ac;
+  /* PHI measure - never show "%" suffix (product request) */
+  $phiMeasure := "";
+  /* PHI trend - use mapped trend when ac_vs_ly is valid, empty otherwise */
+  $phiTrend := $hasValidValue($phi.ac_vs_ly) ? $mapTrend($phi.variationDirectionVsLy) : "";
+  /* PHI comparison - show when ac_vs_ly is valid, empty otherwise */
+  $phiComparison := $hasValidValue($phi.ac_vs_ly) ? { "label": "vs", "value": "LY" } : { "label": "", "value": "" };
+  /* PHI secondaryInfo - show when ac_vs_ly is valid, empty otherwise */
+  $phiSecondaryInfo := $hasValidValue($phi.ac_vs_ly) ? { "label": "", "value": $formatValue($phi.ac) } : { "label": "", "value": "" };
+
+  {
+    "portfolioHealthBigNumber": {
+      "title": "PHI",
+      "period": $phi.refreshMonthLabel,
+      "bigNumberData": $count($phi) < 1 ? [] : [
+        {
+          "bigNumber": {
+            "value": $formatValue($phiBigNumberValue),
+            "measure": $phiMeasure,
+            "trend": $phiTrend
+          },
+          "comparison": $phiComparison,
+          "secondaryInfo": $phiSecondaryInfo
+        }
+      ]
+    },
+    "packPriceBigNumber": {
+      "title": "Pack & Price Driven Volume",
+      "period": $packPriceLast.refreshMonthLabel,
+      "bigNumberData": $count($packPriceLast) < 1 ? [] : [
+        {
+          "bigNumber": {
+            "value": $formatValue($packPriceLast.ac_vs_ly),
+            "measure": $packPriceLast.comp_unit_of_measure,
+            "trend": $mapTrend($packPriceLast.variationDirectionVsLy)
+          },
+          "comparison": {
+            "label": "vs",
+            "value": "LY"
+          },
+          "secondaryInfo": {
+            "label": "[ " & $packPriceLast.unit_of_measure & " ]",
+            "value": $formatValue($packPriceLast.ac)
+          }
+        }
+      ]
+    },
+    "brandRenovationBigNumber": {
+      "title": "Superior Brands",
+      "period": $brandRenovationLast.refreshMonthLabel,
+      "bigNumberData": $count($brandRenovationLast) < 1 ? [] : [
+        {
+          "bigNumber": {
+            "value": $formatValue($brandRenovationLast.ac_vs_ly),
+            "measure": $brandRenovationLast.comp_unit_of_measure,
+            "trend": $mapTrend($brandRenovationLast.variationDirectionVsLy)
+          },
+          "comparison": {
+            "label": "vs",
+            "value": "LY"
+          },
+          "secondaryInfo": {
+            "label": "[ " & $brandRenovationLast.unit_of_measure & " ]",
+            "value": $formatValue($brandRenovationLast.ac)
+          }
+        }
+      ]
+    },
+    "newInnovationsBigNumber": {
+      "title": "New Innovations Driven Volume",
+      "period": $newInnovationsLast.refreshMonthLabel,
+      "bigNumberData": $count($newInnovationsLast) < 1 ? [] : [
+        {
+          "bigNumber": {
+            "value": $formatValue($newInnovationsLast.ac_vs_ly),
+            "measure": $newInnovationsLast.comp_unit_of_measure,
+            "trend": $mapTrend($newInnovationsLast.variationDirectionVsLy)
+          },
+          "comparison": {
+            "label": "vs",
+            "value": "LY"
+          },
+          "secondaryInfo": {
+            "label": "[ " & $newInnovationsLast.unit_of_measure & " ]",
+            "value": $formatValue($newInnovationsLast.ac)
+          }
+        }
+      ]
+    }
+  }
+)

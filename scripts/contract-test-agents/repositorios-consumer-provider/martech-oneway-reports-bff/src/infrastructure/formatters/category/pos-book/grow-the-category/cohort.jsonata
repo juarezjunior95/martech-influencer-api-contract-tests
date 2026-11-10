@@ -1,0 +1,166 @@
+/**
+ * 🔢 COHORT FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: Category > POS Book > Grow the Category > Cohort
+ * 🔄 Input: category_pos-book_grow-the-category_cohort data
+ * 📤 Output: Cohort participation table with header and rows grouped by Global, Gender, Age, Income
+ * 🔧 Config: color_dict for category colors
+ */
+
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+  $isEmpty := $count($data) = 0;
+  $kpiName := ($isEmpty = false and $data[0] and $data[0].kpi_name) ? $data[0].kpi_name : "occasion";
+
+  $normalizeCategory := function($name) {
+    $name = "Alcohool" ? "Alcohol" : $name
+  };
+
+  $toCategoryId := function($name) {
+    $lowercase($replace($normalizeCategory($name), " ", "_"))
+  };
+
+  $colorDict := {
+    "alcohol": "#C9D1D6",
+    "beer": "#F0DF78",
+    "beyond_beer": "#EEC879",
+    "spirits": "#A1CFF4",
+    "wine": "#F6B7D0"
+  };
+
+  $getColor := function($category) {
+    $lookup($colorDict, $toCategoryId($category))
+  };
+
+  $normalizedKpiName := $lowercase($kpiName);
+  $showMeasures := $normalizedKpiName in ["p4w", "participation"];
+  $chartUnitMeasure := $showMeasures ? "%" : "";
+  $variationMeasure := $showMeasures ? "pp" : "";
+
+  $categoriesRaw := ["Alcohool", "Beer", "Beyond Beer", "Spirits", "Wine"];
+  $categoryIds := ["alcohol", "beer", "beyond_beer", "spirits", "wine"];
+
+  $toNumber := function($val) {
+    $type($val) = "string" ? $number($val) : $val
+  };
+
+  $getMaxForCategory := function($categoryId) {
+    (
+      $categoryData := $filter($data, function($item) { 
+        $toCategoryId($item.category) = $categoryId 
+      });
+      $acValues := $map($categoryData, function($item) { 
+        $toNumber($item.ac)
+      });
+      $validValues := $filter($acValues, function($val) { $type($val) = "number" });
+      $maxAc := $count($validValues) > 0 ? $max($validValues) : 0;
+      $maxAc > 0 ? $maxAc : 100
+    )
+  };
+
+  $formatCohortLabel := function($cohortLevel) {
+    $cohortLevel = "25-34" ? "25 - 34" :
+    $cohortLevel = "35-44" ? "35 - 44" :
+    $cohortLevel = "45-54" ? "45 - 54" :
+    $cohortLevel
+  };
+
+  $buildCategoryData := function($item, $categoryRaw, $categoryId) {
+    (
+      $maxValue := $getMaxForCategory($categoryId);
+      $item ? {
+        "chartData": {
+          "data": [$formatValue($item.ac)],
+          "backgroundColor": [$getColor($categoryRaw)],
+          "chartUnitMeasure": $chartUnitMeasure
+        },
+        "variation": $formatValue($item.ac_vs_ly),
+        "variationMeasure": $variationMeasure,
+        "chartScaleMax": $maxValue
+      } : {
+        "chartData": {
+          "data": ["0"],
+          "backgroundColor": [$getColor($categoryRaw)],
+          "chartUnitMeasure": $chartUnitMeasure
+        },
+        "variation": "0",
+        "variationMeasure": $variationMeasure,
+        "chartScaleMax": $maxValue
+      }
+    )
+  };
+
+  $buildRow := function($rowData, $cohortLevel) {
+    $merge([
+      {
+        "label": { 
+          "noChart": true, 
+          "merge": true, 
+          "value": $formatCohortLabel($cohortLevel) 
+        }
+      },
+      $merge($map($categoriesRaw, function($categoryRaw, $idx) {
+        (
+          $categoryId := $categoryIds[$idx];
+          $categoryItem := $filter($rowData, function($item) { 
+            $toCategoryId($item.category) = $categoryId 
+          })[0];
+          {
+            ($categoryId): $buildCategoryData($categoryItem, $categoryRaw, $categoryId)
+          }
+        )
+      }))
+    ])
+  };
+
+  $groups := [
+    { "items": ["Global", "Overall"] },
+    { "items": ["Male", "Female"] },
+    { "items": ["LDA - 24", "25-34", "35-44", "45-54", "55+"] },
+    { "items": ["High Income", "Medium Income", "Low Income"] }
+  ];
+
+  $buildRows := function() {
+    $map($groups, function($group) {
+      (
+        $groupItems := $group.items;
+
+        $groupRows := $map($groupItems, function($cohortLevel) {
+          (
+            $rowData := $filter($data, function($item) { $item.cohort_level = $cohortLevel });
+            
+            $count($rowData) > 0 
+              ? $buildRow($rowData, $cohortLevel)
+              : null
+          )
+        });
+
+        $filter($groupRows, function($row) { $row != null })
+      )
+    })
+  };
+
+  $labelHeader := {
+    "title": "Label",
+    "children": [
+      { "title": "Label", "id": "label" }
+    ]
+  };
+
+  $categoryHeaders := $map($categoriesRaw, function($categoryRaw, $idx) {
+    {
+      "title": $normalizeCategory($categoryRaw),
+      "id": $categoryIds[$idx]
+    }
+  });
+
+  $header := $append([$labelHeader], $categoryHeaders);
+
+  $isEmpty
+    ? { "empty": true }
+    : {
+        "header": $header,
+        "rows": $buildRows()
+      }
+)

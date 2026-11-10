@@ -1,0 +1,79 @@
+/**
+ * 🔢 NET REVENUE OVERTIME PERFORMANCE FORMATTER
+ * 🎯 Component: BigNumberCards
+ * 📍 Used on: Value Creation > Performance Tool > Drill Down > Net Revenue > Overtime Performance
+ * 🔄 Input: net-revenue overtime-performance data
+ * 📤 Output: BigNumbersSectionData[] (BigNumberCards interface)
+ */
+
+(
+  $datasourceName := "value-creation_performance-tool_drill-down_finance_net-revenue_overtime-performance";
+  $data := $lookup(datasources, $datasourceName);
+
+  $getPeriodLabel := function($period) {
+    (
+      $periodType := $period.period;
+      $refresh := $period.refreshMonthLabel;
+      $periodType = "YTD" ? "Net Revenue YTD" :
+      $periodType = "L3M" ? "Net Revenue L3M" :
+      $periodType = "MTD" ? "Net Revenue " & $refresh :
+      "Net Revenue " & $periodType
+    )
+  };
+
+  $formatMeasure := function($measure) {
+    $exists($measure) and $measure != "" ? "[ " & $measure & " ]" : ""
+  };
+
+  $hasValidData := function($period) {
+    $exists($period) and
+    $exists($period.ac) and
+    $type($period.ac) = "number"
+  };
+
+  $buildPeriodData := function($period) {
+    $hasValidData($period) ? [
+      {
+        "bigNumber": {
+          "value": $formatValue($period.ac_vs_ly),
+          "measure": $period.comp_unit_of_measure,
+          "trend": $getTrend($period.ac_vs_ly, $period.variationDirectionVsLy)
+        },
+        "secondaryInfo": {
+          "value": $formatValue($period.ac),
+          "label": $formatMeasure($period.unit_of_measure)
+        },
+        "comparison": {
+          "label": "vs",
+          "value": "LY"
+        }
+      },
+      {
+        "bigNumber": {
+          "value": $formatValue($period.ac_vs_bu),
+          "measure": $period.comp_unit_of_measure,
+          "trend": $getTrend($period.ac_vs_bu, $period.variationDirectionVsBu)
+        },
+        "comparison": {
+          "label": "vs",
+          "value": "BU"
+        }
+      }
+    ] : []
+  };
+
+  $expectedPeriods := ["YTD", "L3M", "MTD"];
+
+  $map($expectedPeriods, function($periodType) {
+    (
+      $period := $filter($data, function($item) { $item.period = $periodType })[0];
+      {
+        "header": {
+          "title": $exists($period) ? $getPeriodLabel($period) : "Net Revenue " & $periodType,
+          "measure": $exists($period) ? $formatMeasure($period.unit_of_measure) : ""
+        },
+        "data": $buildPeriodData($period)
+      }
+    )
+  })
+)

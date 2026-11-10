@@ -1,0 +1,91 @@
+(
+  /* Get line chart data */
+  $lineChartItems := datasources."value-creation_performance-tool_drill-down_non-finance_overtime-trends_by-granularity";
+  $lineChartHasData := $count($lineChartItems) > 0;
+  
+  /* Suggested min/max for line chart scale */
+  $lineChartMinAc := $lineChartHasData ? $min($lineChartItems.ac) : null;
+  $lineChartMaxAc := $lineChartHasData ? $max($lineChartItems.ac) : null;
+  $range := $lineChartMinAc != null and $lineChartMaxAc != null ? ($lineChartMaxAc - $lineChartMinAc) : null;
+  $rangePadding := $range != null ? ($range * 0.5) : null;
+  $suggestedMin := $lineChartMinAc != null and $rangePadding != null ? $round($lineChartMinAc - $rangePadding, 1) : 40;
+  $suggestedMax := $lineChartMaxAc != null and $rangePadding != null ? $round($lineChartMaxAc + $rangePadding, 1) : 70;
+  
+  /* Formatted data arrays */
+  $lastYearFormatted := $lineChartItems.($formatNumber(($.ac - $.ac_vs_ly), "#,##0.0"));
+  $currentYearFormatted := $lineChartItems.($formatNumber($.ac, "#,##0.0"));
+  
+  /* Bar chart data */
+  $barChartItems := datasources."value-creation_performance-tool_drill-down_non-finance_overtime-trends_snapshot";
+  $barChartHasData := $count($barChartItems) > 0 and $exists($barChartItems.ac[$type($) = "number" and $ != 0][0]);
+  
+  $hasData := $lineChartHasData or $barChartHasData;
+  $hasData = false ? { "empty": true } : {
+    "legend": [
+    { "label": "Last Year" },
+    { "label": "Current" }
+  ],
+  "lineChart": $lineChartHasData ? {
+    "suggestedMin": $suggestedMin,
+    "suggestedMax": $suggestedMax,
+    "labels": $map($lineChartItems, function($item) {(
+      $quarter := $item.quarter;
+      $year := $item.year % 100;
+      $quarter & "'" & $year
+    )}),
+    "datasets": [
+      {
+        "label": "Current Year",
+        "data": $lineChartItems.($round($.ac, 1))
+      }
+    ],
+    "formattedData": [
+      [$currentYearFormatted]
+    ],
+    "comparisonLine": {
+      "data": [
+        {
+          "title": "vs LY",
+          "data": $map($lineChartItems, function($item) {
+            {
+              "value": $formatNumber($item.ac_vs_ly, "#,##0.0"),
+              "measure": $item.comp_unit_of_measure,
+              "trend": $item.variation_direction_ly = "up" ? "positive" : "negative"
+            }
+          })
+        }
+      ]
+    }
+  } : [],
+  "barChart": $barChartHasData ? {
+    "labels": $reverse($map($barChartItems, function($item) {(
+      $periodType := $item.quarter;
+      $yearShort := $item.year % 100;
+      $periodType & "'" & $yearShort
+    )})),
+    "datasets": [
+      {
+        "label": "YTD Comparison",
+        "data": $reverse($barChartItems.($round($.ac, 1)))
+      }
+    ],
+    "formattedData": [
+      [$reverse($barChartItems.($formatNumber($.ac, "#,##0.0")))]
+    ],
+    "comparisonLine": {
+      "data": [
+        {
+          "title": "vs LY",
+          "data": $reverse($map($barChartItems, function($item) {
+            {
+              "value": $formatNumber($item.ac_vs_ly, "#,##0.0"),
+              "measure": $item.comp_unit_of_measure,
+              "trend": $item.variation_direction_ly = "up" ? "positive" : "negative"
+            }
+          }))
+        }
+      ]
+    }
+  } : []
+  }
+)

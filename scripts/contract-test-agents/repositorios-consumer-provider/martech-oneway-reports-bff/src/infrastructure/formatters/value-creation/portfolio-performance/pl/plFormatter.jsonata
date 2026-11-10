@@ -1,0 +1,451 @@
+/**
+ * 🎯 Component: P&L brand table (Value Creation > Portfolio Performance > P&L)
+ * 📍 Used on: view value-creation_portfolio-performance_pl_brand
+ * 🔄 Input: $.components[0].data.datasources | $.datasources
+ * 📤 Output: { "table": { header, filtersOptions, rows } }
+ */
+(
+  $datasources := $exists($.components) and $count($.components) > 0 ? $.components[0].data.datasources : $.datasources;
+  $dsVol := "value-creation_portfolio-performance_pl_brand_volume";
+  $dsGc := "value-creation_portfolio-performance_pl_brand_growth-contribution";
+  $dsOut := "value-creation_portfolio-performance_pl_brand_output";
+
+  $config := {
+    "variation": { "unit_measure_percent": "%", "unit_measure_pp": "pp" },
+    "direction": { "up": "#49764B", "down": "#A20A0A" },
+    "legend": { "last_year_color": "#ABBFCB", "current_year_color": "#D1A33C" }
+  };
+
+  $brandLabel := function($row) {
+    $exists($row.raw_brand) and $row.raw_brand != null and $string($row.raw_brand) != ""
+      ? $row.raw_brand
+      : $row.brand
+  };
+
+  $normalizeId := function($segment, $brandResolved) {
+    (
+      $seg := $lowercase($segment);
+      $br := $lowercase($string($brandResolved));
+      ($seg = "tt" or $seg = "n/a") ? "tt_market_beer_adj" : $seg & "_" & $br
+    )
+  };
+
+  $directionToHex := function($dir) {
+    $lowercase($string($dir)) = "down" ? $config.direction.down : $config.direction.up
+  };
+
+  $pickVsLyDirection := function($row) {
+    $exists($row.variationDirectionVsLy)
+      ? $row.variationDirectionVsLy
+      : (
+          $exists($row.ac_vs_ly_direction)
+            ? $row.ac_vs_ly_direction
+            : (
+                $exists($row.comp_direction)
+                  ? $row.comp_direction
+                  : (
+                      $exists($row.comp_ac_ly_direction) ? $row.comp_ac_ly_direction : "up"
+                    )
+              )
+        )
+  };
+
+  $pickAcDirection := function($row) {
+    $exists($row.variationDirectionAc) ? $row.variationDirectionAc : "up"
+  };
+
+  /* S&M e S&M % MACO: “up” vs LY = pior (vermelho); “down” = melhor (verde) — inverte o mapeamento habitual */
+  $invertVsLyColorForGrowthKpi := function($kpi) {
+    $kpi = "sm" or $kpi = "sm_of_maco"
+  };
+
+  $vsLyDirectionHexForGrowth := function($row, $kpi) {
+    (
+      $dir := $pickVsLyDirection($row);
+      $invertVsLyColorForGrowthKpi($kpi)
+        ? ($lowercase($string($dir)) = "down" ? $config.direction.up : $config.direction.down)
+        : $directionToHex($dir)
+    )
+  };
+
+  $volumeRaw := $lookup($datasources, $dsVol);
+  $growthRaw := $lookup($datasources, $dsGc);
+  $outputRaw := $lookup($datasources, $dsOut);
+
+  $ensureArray := function($value) {
+    $type($value) = "array"
+      ? $value
+      : ($exists($value) and $value != null ? [$value] : [])
+  };
+
+  $volumeGrowth := $map(
+    $ensureArray($volumeRaw),
+    function($v) {
+      (
+        $dt := $v.dt_ini;
+        $year := $substring($dt, 0, 4);
+        $yearNum := $number($year);
+        $merge([
+          $v,
+          {
+            "label_year_formatted": $year & " AC",
+            "label_year_formatted_ly": ($yearNum - 1) & " AC"
+          }
+        ])
+      )
+    }
+  );
+
+  $growthContribution := $ensureArray($growthRaw);
+  $output := $ensureArray($outputRaw);
+
+  $isValidNumber := function($val) { $type($val) = "number" };
+  $formatValue := function($val) {
+    ($val = null or $val = "") ? "-" : $val
+  };
+
+  $growthKpiTitle := function($kpi) {
+    $kpi = "volume_growth_contr"
+      ? "Growth Contribution"
+      : $kpi = "volume"
+        ? "Vol"
+        : $kpi = "nr"
+          ? "NR"
+          : $kpi = "nr_per_hl"
+            ? "NR/hl"
+            : $kpi = "sm"
+              ? "S&M"
+              : $kpi = "sm_of_maco"
+                ? "S&M % MACO"
+                : $kpi = "maco_per_hl"
+                  ? "MACO/hl"
+                  : $kpi = "cores_per_hl"
+                    ? "CORES/hl"
+                    : $kpi
+  };
+
+  $subtitleForSnakeKpi := function($kpi) {
+    $kpi = "volume"
+      ? "[k hl]"
+      : ($kpi = "nr" or $kpi = "sm")
+        ? "[$Mio]"
+        : ($kpi = "nr_per_hl" or $kpi = "maco_per_hl" or $kpi = "cores_per_hl")
+          ? "[$/hl]"
+          : $kpi = "sm_of_maco"
+            ? ""
+            : undefined
+  };
+
+  $outputKpiTitle := function($kpi) {
+    $kpi = "market_share"
+      ? "Market Share"
+      : $kpi = "power"
+        ? "Brand Power"
+        : $kpi = "p4w"
+          ? "Beer Participation"
+          : $kpi
+  };
+
+  /* Market Share → mês (refreshMonthLabel); Brand Power / Beer Participation → trimestre quando existir na fonte */
+  $outputKpiSubtitle := function($kpi, $row) {
+    $not($exists($row)) or $row = null
+      ? ""
+      : $kpi = "market_share"
+        ? ($exists($row.refreshMonthLabel) ? $row.refreshMonthLabel : "")
+        : ($kpi = "power" or $kpi = "p4w")
+          ? (
+              $exists($row.period_refresh) and $string($row.period_refresh) != ""
+                ? $row.period_refresh
+                : (
+                    $exists($row.refreshQuarterLabel) and $string($row.refreshQuarterLabel) != ""
+                      ? $row.refreshQuarterLabel
+                      : ($exists($row.refreshMonthLabel) ? $row.refreshMonthLabel : "")
+                  )
+            )
+          : ""
+  };
+
+  $vsLyUnitForGrowthKpi := function($kpi) {
+    ($kpi = "sm" or $kpi = "sm_of_maco") ? "pp" : "%"
+  };
+
+  $filterBySegment := function($data, $segment) {
+    $filter($data, function($item) { $lowercase($item.segment) = $lowercase($segment) })
+  };
+
+  $filterByKpi := function($data, $kpi) {
+    $filter($data, function($item) { $item.kpi_name = $kpi })
+  };
+
+  $getDistinctKpis := function($data) {
+    $distinct($map($filter($data, function($cell) { $cell.kpi_name != "" }), function($entry) { $entry.kpi_name }))
+  };
+
+  $profitLossHeaderSubtitle := (
+    $naGc := $filter($growthContribution, function($r) { $r.kpi_name = "volume_growth_contr" and ($lowercase($r.segment) = "n/a" or $r.segment = "N/A") });
+    $count($naGc) > 0 and $exists($naGc[0].refreshMonthLabel)
+      ? $naGc[0].refreshMonthLabel
+      : ($count($growthContribution) > 0 ? $growthContribution[0].refreshMonthLabel : "")
+  );
+
+  $valuePairs := $map($volumeGrowth, function($v) { [$safeNumber($v.ac), $safeNumber($v.ac_vs_ly), 0, 100] });
+  $flatValues := $reduce($valuePairs, $append);
+  $validNumbers := $filter($flatValues, $isValidNumber);
+  $minValue := $count($validNumbers) > 0 ? $min($validNumbers) : 0;
+  $maxValue := $count($validNumbers) > 0 ? $max($validNumbers) : 100;
+
+  $mergeCellObjects := function($parts) {
+    $reduce($ensureArray($parts), function($acc, $obj) { $merge([$acc, $obj]) }, {})
+  };
+
+  $mapArray := function($arr, $fn) {
+    $ensureArray($map($arr, $fn))
+  };
+
+  $groupedBrands := function($seg, $emptyTitle) {
+    $mapArray(
+      $filterBySegment($volumeGrowth, $seg),
+      function($v) {
+        {
+          "title": $emptyTitle ? "" : $brandLabel($v),
+          "id": $normalizeId($v.segment, $brandLabel($v))
+        }
+      }
+    )
+  };
+
+  $filterJoin := function($seg) {
+    $join(
+      $map($filterBySegment($volumeGrowth, $seg), function($v) { $normalizeId($v.segment, $brandLabel($v)) }),
+      ", "
+    )
+  };
+
+  $buildVsLyRow := function($data, $kpi, $unitMeasure) {
+    $mergeCellObjects(
+      $append(
+        [{ "profit_loss": { "value": "vs LY" } }],
+        $map(
+          $filterByKpi($data, $kpi),
+          function($v) {
+            {
+              ($normalizeId($v.segment, $brandLabel($v))): {
+                "value": $formatValue($v.ac_vs_ly),
+                "unitMeasure": $isValidNumber($v.ac_vs_ly) ? $unitMeasure : undefined,
+                "variationDirection": $isValidNumber($v.ac_vs_ly) ? $vsLyDirectionHexForGrowth($v, $kpi) : undefined
+              }
+            }
+          }
+        )
+      )
+    )
+  };
+
+  $buildGrowthKpiRow := function($kpi) {
+    (
+      $title := $growthKpiTitle($kpi);
+      $sub := $subtitleForSnakeKpi($kpi);
+      $profitLossCell := (
+        $kpi = "sm_of_maco"
+          ? { "value": $title, "subtitle": "" }
+          : ($exists($sub) and $sub != null)
+            ? { "value": $title, "subtitle": $sub }
+            : { "value": $title }
+      );
+      $mergeCellObjects(
+        $append(
+          [{ "profit_loss": $profitLossCell }],
+          $map(
+            $filterByKpi($growthContribution, $kpi),
+            function($v) {
+              {
+                ($normalizeId($v.segment, $brandLabel($v))): {
+                  "value": $formatValue($v.ac),
+                  "unitMeasure": $isValidNumber($v.ac)
+                    ? ($kpi = "volume_growth_contr" ? "%" : undefined)
+                    : undefined
+                }
+              }
+            }
+          )
+        )
+      )
+    )
+  };
+
+  $buildOutputKpiRow := function($kpi) {
+    (
+      $first := $filterByKpi($output, $kpi)[0];
+      $sub := $outputKpiSubtitle($kpi, $first);
+      $mergeCellObjects(
+        $append(
+          [
+            {
+              "profit_loss": $sub != ""
+                ? { "value": $outputKpiTitle($kpi), "subtitle": $sub }
+                : { "value": $outputKpiTitle($kpi) }
+            }
+          ],
+          $map(
+            $filterByKpi($output, $kpi),
+            function($v) {
+              {
+                ($normalizeId($v.segment, $brandLabel($v))): {
+                  "value": $formatValue($v.ac),
+                  "unitMeasure": $isValidNumber($v.ac) ? "%" : undefined
+                }
+              }
+            }
+          )
+        )
+      )
+    )
+  };
+
+  $buildOutputVsLyRow := function($kpi) {
+    $mergeCellObjects(
+      $append(
+        [{ "profit_loss": { "value": "vs LY" } }],
+        $map(
+          $filterByKpi($output, $kpi),
+          function($v) {
+            {
+              ($normalizeId($v.segment, $brandLabel($v))): {
+                "value": $formatValue($v.ac_vs_ly),
+                "unitMeasure": $isValidNumber($v.ac_vs_ly) ? "pp" : undefined,
+                "variationDirection": $isValidNumber($v.ac_vs_ly) ? $directionToHex($pickVsLyDirection($v)) : undefined
+              }
+            }
+          }
+        )
+      )
+    )
+  };
+
+  $buildOutputHeaderRow := function() {
+    $mergeCellObjects(
+      $append(
+        [{ "profit_loss": { "value": "Output" } }],
+        $map(
+          $volumeGrowth,
+          function($v) {
+            { ($normalizeId($v.segment, $brandLabel($v))): { "value": "" } }
+          }
+        )
+      )
+    )
+  };
+
+  $chartRow := $mergeCellObjects(
+    $append(
+      [
+        {
+          "profit_loss": {
+            "chartLegend": {
+              "title": "Volume Growth",
+              "values": [
+                { "color": $config.legend.last_year_color, "label": $count($volumeGrowth) > 0 ? $volumeGrowth[0].label_year_formatted_ly : "LY" },
+                { "color": $config.legend.current_year_color, "label": $count($volumeGrowth) > 0 ? $volumeGrowth[0].label_year_formatted : "AC" }
+              ]
+            }
+          }
+        }
+      ],
+      $map(
+        $volumeGrowth,
+        function($v) {
+          {
+            ($normalizeId($v.segment, $brandLabel($v))): {
+              "chartData": {
+                "data": [$safeNumber($v.ac_vs_ly), $safeNumber($v.ac)],
+                "backgroundColor": [$config.legend.last_year_color, $config.legend.current_year_color],
+                "variationColor": [$directionToHex($pickAcDirection($v)), $directionToHex($pickVsLyDirection($v))],
+                "max": $maxValue,
+                "min": $minValue,
+                "labels": [$v.label_year_formatted_ly, $v.label_year_formatted],
+                "variationMeasure": "%"
+              }
+            }
+          }
+        }
+      )
+    )
+  );
+
+  $growthKpiList := $getDistinctKpis($growthContribution);
+  $growthRows := $reduce(
+    $growthKpiList,
+    function($acc, $kpi) {
+      $append(
+        $append($acc, [$buildGrowthKpiRow($kpi)]),
+        $kpi != "volume_growth_contr"
+          ? [$buildVsLyRow($growthContribution, $kpi, $vsLyUnitForGrowthKpi($kpi))]
+          : []
+      )
+    },
+    []
+  );
+
+  $outputKpiList := $getDistinctKpis($output);
+  $outputBlock := $append(
+    [$buildOutputHeaderRow()],
+    $reduce(
+      $outputKpiList,
+      function($acc, $kpi) {
+        $append($append($acc, [$buildOutputKpiRow($kpi)]), [$buildOutputVsLyRow($kpi)])
+      },
+      []
+    )
+  );
+
+  $mainRowBlock := $append([$chartRow], $growthRows);
+
+  $count($volumeGrowth) = 0
+    ? { "table": { "empty": true } }
+    : {
+        "table": {
+          "header": $filter(
+            [
+              {
+                "title": "KPI",
+                "id": "kpi",
+                "children": [
+                  {
+                    "title": "Profit and Loss",
+                    "subtitle": $profitLossHeaderSubtitle,
+                    "id": "profit_loss"
+                  }
+                ]
+              },
+              {
+                "title": "TT Market",
+                "children": $mapArray(
+                  $filterBySegment($volumeGrowth, "tt"),
+                  function($v) { { "title": "Beer + ADJ", "id": "tt_market_beer_adj" } }
+                )
+              },
+              { "title": "Megabrands", "children": $groupedBrands("megabrands") },
+              { "title": "Expansion", "children": $groupedBrands("expansion") },
+              { "title": "Sustain", "children": $groupedBrands("sustain") },
+              { "title": "Tail", "children": $groupedBrands("tail", true) }
+            ],
+            function($h) { $count($h.children) > 0 }
+          ),
+          "filtersOptions": [
+            {
+              "group": "Portfolio",
+              "values": $filter(
+                [
+                  { "label": "Megabrands", "value": $filterJoin("megabrands") },
+                  { "label": "Expansion", "value": $filterJoin("expansion") },
+                  { "label": "Sustain", "value": $filterJoin("sustain") },
+                  { "label": "Tail", "value": $filterJoin("tail") }
+                ],
+                function($opt) { $opt.value != "" }
+              )
+            }
+          ],
+          "rows": $append([[$mainRowBlock]], [[$outputBlock]])
+        }
+      }
+)

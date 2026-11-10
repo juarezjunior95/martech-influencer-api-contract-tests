@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fluxo Pact — connect-influencer-web</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --card-hover: #222633;
+      --text: #e6e8ef;
+      --muted: #9aa3b5;
+      --accent: #5b9cf5;
+      --ok: #3ecf8e;
+      --warn: #f0b429;
+      --danger: #f56565;
+      --border: #2a2f3d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      line-height: 1.55;
+    }
+    main { max-width: 1000px; margin: 0 auto; padding: 40px 24px 64px; }
+    h1 { font-size: 1.85rem; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.02em; }
+    h2 { font-size: 1.15rem; font-weight: 600; margin: 36px 0 14px; padding-top: 28px; border-top: 1px solid var(--border); }
+    h3 { font-size: 0.95rem; font-weight: 600; margin: 0 0 10px; color: var(--text); }
+    .subtitle { color: var(--muted); margin: 0 0 20px; max-width: 720px; }
+    strong { color: var(--text); font-weight: 600; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+    .pill {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px; }
+    @media (max-width: 640px) { .stats { grid-template-columns: 1fr; } }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+    .stat .value { font-size: 1.75rem; font-weight: 700; line-height: 1.2; }
+    .stat .label { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+    .stat.ok .value { color: var(--ok); }
+    .stat.warn .value { color: var(--warn); }
+    .stat.info .value { color: var(--accent); }
+    .callout {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 0 10px 10px 0;
+      padding: 18px 20px;
+      margin: 20px 0;
+    }
+    .callout.warn { border-left-color: var(--warn); }
+    .callout p { margin: 8px 0 0; color: var(--muted); font-size: 0.92rem; }
+    .callout-title { font-weight: 600; color: var(--text); }
+    .flow-scroll { overflow-x: auto; padding-bottom: 8px; }
+    .flow {
+      display: flex;
+      gap: 0;
+      align-items: stretch;
+      min-width: 900px;
+      margin: 16px 0;
+    }
+    .flow-step {
+      flex: 1;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 12px;
+      position: relative;
+      margin-right: 28px;
+    }
+    .flow-step:last-child { margin-right: 0; }
+    .flow-step::after {
+      content: "→";
+      position: absolute;
+      right: -22px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 1.1rem;
+    }
+    .flow-step:last-child::after { content: none; }
+    .flow-step.done { border-color: #2d5a42; }
+    .flow-step.current { border: 2px solid var(--accent); }
+    .flow-step.pending { opacity: 0.65; border-style: dashed; }
+    .flow-num { font-size: 0.72rem; color: var(--muted); }
+    .flow-title { font-size: 0.88rem; font-weight: 600; margin: 4px 0 2px; }
+    .flow-sub { font-size: 0.75rem; color: var(--muted); }
+  code {
+    background: #252936;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.82em;
+    font-family: ui-monospace, monospace;
+  }
+    .roles {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      margin: 24px 0;
+      padding: 24px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .role-box {
+      width: 100%;
+      max-width: 420px;
+      text-align: center;
+      padding: 14px 20px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #222633;
+    }
+    .role-box.broker { border-color: var(--accent); background: #1e2a3d; }
+    .role-box.provider { border-style: dashed; opacity: 0.85; }
+    .role-label { font-weight: 600; font-size: 0.95rem; }
+    .role-name { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+    .role-arrow { color: var(--muted); font-size: 1.2rem; padding: 6px 0; }
+    .role-hint { font-size: 0.72rem; color: var(--muted); margin-left: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { border: 1px solid var(--border); padding: 11px 12px; text-align: left; }
+    th { background: var(--card); font-weight: 600; color: var(--text); }
+    tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+    tr.row-ok td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+    tr.row-warn td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+    @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 18px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+    .card-body { padding: 16px 18px; }
+    .card-body p { margin: 0 0 12px; font-size: 0.88rem; color: var(--muted); }
+    .card-body table { margin-top: 8px; }
+    .list-validates { margin: 0; padding-left: 18px; }
+    .list-validates li { margin-bottom: 6px; font-size: 0.88rem; color: var(--muted); }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 0.78rem; color: var(--muted); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+    .badge-ok { background: rgba(62,207,142,0.15); color: var(--ok); }
+    .badge-warn { background: rgba(240,180,41,0.15); color: var(--warn); }
+    .badge-err { background: rgba(245,101,101,0.15); color: var(--danger); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Fluxo de testes de contrato — Pact</h1>
+    <p class="subtitle">
+      Guia visual do contrato publicado entre
+      <strong>connect-influencer-web</strong> (consumer / portal) e
+      <strong>martech-connect-influencer-service</strong> (provider / API).
+    </p>
+
+    <div class="pills">
+      <span class="pill">Versão local-20260807-150515</span>
+      <span class="pill">5 interações (3× 200 + 2× 401)</span>
+      <span class="pill">Sprint 199 · MARTGNM-5948 / 5955</span>
+    </div>
+
+    <div class="stats">
+      <div class="stat info">
+        <div class="value">5</div>
+        <div class="label">Cenários no contrato</div>
+      </div>
+      <div class="stat ok">
+        <div class="value">OK</div>
+        <div class="label">Consumer test (Vitest)</div>
+      </div>
+      <div class="stat warn">
+        <div class="value">—</div>
+        <div class="label">Provider verify (UAT)</div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <div class="callout-title">O que é a página do Pact Broker?</div>
+      <p>
+        A URL do contrato é o <strong>acordo publicado</strong> entre portal e API — não é um relatório
+        de execução do Vitest. Cada bloco lista um request/response que o consumer depende.
+        O provider ainda precisa <strong>verificar</strong> se a API real responde igual.
+      </p>
+      <p>
+        <a href="http://localhost:9292/pacts/provider/martech-connect-influencer-service/consumer/connect-influencer-web/version/local-20260807-150515" target="_blank" rel="noopener">
+          Abrir contrato no Pact Broker (localhost:9292)
+        </a>
+      </p>
+    </div>
+
+    <h2>Fluxo em 6 passos</h2>
+    <p class="subtitle" style="margin-top: -8px; margin-bottom: 0;">Da escrita do teste até a garantia de compatibilidade com a API em UAT.</p>
+    <div class="flow-scroll">
+      <div class="flow">
+        <div class="flow-step done">
+          <div class="flow-num">1</div>
+          <div class="flow-title">Consumer test</div>
+          <div class="flow-sub"><code>npm run test:pact:consumer</code></div>
+        </div>
+        <div class="flow-step done">
+          <div class="flow-num">2</div>
+          <div class="flow-title">Mock Pact</div>
+          <div class="flow-sub">Valida request do cliente</div>
+        </div>
+        <div class="flow-step done">
+          <div class="flow-num">3</div>
+          <div class="flow-title">Gera contrato</div>
+          <div class="flow-sub">tests/contract/pacts/*.json</div>
+        </div>
+        <div class="flow-step done">
+          <div class="flow-num">4</div>
+          <div class="flow-title">Publica no Broker</div>
+          <div class="flow-sub"><code>npm run pact:publish</code></div>
+        </div>
+        <div class="flow-step current">
+          <div class="flow-num">5</div>
+          <div class="flow-title">Página do contrato</div>
+          <div class="flow-sub">Interações visíveis na UI</div>
+        </div>
+        <div class="flow-step pending">
+          <div class="flow-num">6</div>
+          <div class="flow-title">Provider verify</div>
+          <div class="flow-sub">API real (UAT) — pendente</div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Quem faz o quê</h2>
+    <div class="roles">
+      <div class="role-box">
+        <div class="role-label">Consumer</div>
+        <div class="role-name">connect-influencer-web</div>
+      </div>
+      <div class="role-arrow">↓ <span class="role-hint">publica contrato</span></div>
+      <div class="role-box broker">
+        <div class="role-label">Pact Broker</div>
+        <div class="role-name">localhost:9292 — contrato versionado</div>
+      </div>
+      <div class="role-arrow">↓ <span class="role-hint">replay HTTP (futuro)</span></div>
+      <div class="role-box provider">
+        <div class="role-label">Provider</div>
+        <div class="role-name">martech-connect-influencer-service — verify pendente</div>
+      </div>
+    </div>
+
+    <h2>As 5 interações neste contrato</h2>
+    <p class="subtitle" style="margin-top: -8px;">Três caminhos felizes (200) e dois cenários sem token (401).</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Zephyr</th>
+          <th>Issue</th>
+          <th>Endpoint</th>
+          <th>Query params</th>
+          <th>Auth</th>
+          <th>HTTP</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="row-ok">
+          <td>MARTGNM-T2719</td>
+          <td>MARTGNM-5948</td>
+          <td><code>GET /v1/campaigns/submitter</code></td>
+          <td><code>group=draft&page=1&pageSize=25</code></td>
+          <td>Bearer</td>
+          <td><span class="badge badge-ok">200</span></td>
+        </tr>
+        <tr class="row-warn">
+          <td>MARTGNM-T2721</td>
+          <td>MARTGNM-5948</td>
+          <td><code>GET /v1/campaigns/submitter</code></td>
+          <td><code>group=draft&page=1&pageSize=25</code></td>
+          <td>sem Authorization</td>
+          <td><span class="badge badge-warn">401</span></td>
+        </tr>
+        <tr class="row-ok">
+          <td>MARTGNM-T2723</td>
+          <td>MARTGNM-5955</td>
+          <td><code>GET /v1/campaigns/brand-lead</code></td>
+          <td><code>group=in_progress&page=1&pageSize=25</code></td>
+          <td>Bearer</td>
+          <td><span class="badge badge-ok">200</span></td>
+        </tr>
+        <tr class="row-ok">
+          <td>MARTGNM-T2725</td>
+          <td>MARTGNM-5955</td>
+          <td><code>GET /v1/campaigns/brand-lead</code></td>
+          <td><code>group=draft&marketId&brandId&page=1&pageSize=25</code></td>
+          <td>Bearer</td>
+          <td><span class="badge badge-ok">200</span></td>
+        </tr>
+        <tr class="row-warn">
+          <td>MARTGNM-T2726</td>
+          <td>MARTGNM-5955</td>
+          <td><code>GET /v1/campaigns/brand-lead</code></td>
+          <td><code>group=in_progress&page=1&pageSize=25</code></td>
+          <td>sem Authorization</td>
+          <td><span class="badge badge-warn">401</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Como saber se passou ou falhou</h2>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">1. Consumer test — “o cliente está correto?”</div>
+        <div class="card-body">
+          <p>Roda localmente, sem rede para a API real. Usa mock do Pact.</p>
+          <p>Comando: <code>npm run test:pact:consumer</code></p>
+          <table>
+            <thead><tr><th>Resultado</th><th>Onde ver</th></tr></thead>
+            <tbody>
+              <tr class="row-ok"><td>Passou</td><td>Terminal: <code>5 passed</code></td></tr>
+              <tr class="row-warn"><td>Falhou</td><td>Testes vermelhos, exit code ≠ 0</td></tr>
+              <tr><td>Publicado</td><td>Broker exibe versão e interações</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">2. Provider verify — “a API honra o contrato?”</div>
+        <div class="card-body">
+          <p>Repete os 5 requests contra UAT/SIT. Responsabilidade do time de backend.</p>
+          <p>Comando: <code>npm run pact:verify-provider</code> (URL + token)</p>
+          <table>
+            <thead><tr><th>Resultado</th><th>Onde ver</th></tr></thead>
+            <tbody>
+              <tr class="row-ok"><td>Passou</td><td>Broker: verified / verde</td></tr>
+              <tr class="row-warn"><td>Falhou</td><td>Broker: vermelho + diff</td></tr>
+              <tr><td>Hoje</td><td><span class="badge badge-err">unknown</span> — verify não executado</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <h2>O que cada teste valida (e o que não valida)</h2>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">Valida</div>
+        <div class="card-body">
+          <ul class="list-validates">
+            <li>Método, path e query params acordados</li>
+            <li>Header <code>Authorization: Bearer</code> nos cenários autenticados</li>
+            <li>Status <code>200</code> / <code>401</code> e <code>Content-Type: application/json</code></li>
+            <li>Formato JSON: <code>items[]</code>, <code>page</code>, <code>pageSize</code>, <code>total</code></li>
+          </ul>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">Não valida</div>
+        <div class="card-body">
+          <ul class="list-validates">
+            <li>Lógica de negócio completa</li>
+            <li>Dados reais do banco (matchers flexíveis)</li>
+            <li>Performance, UI ou fluxo E2E do usuário</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout warn" style="margin-top: 28px;">
+      <div class="callout-title">Mensagem para gestão</div>
+      <p>
+        Consumer tests já passaram e o contrato está publicado. O passo pendente é
+        <strong>provider verification</strong>: sem ele, o Broker mostra o acordo mas não confirma
+        que a API em UAT ainda cumpre o combinado.
+      </p>
+    </div>
+
+    <div class="footer">
+      Projeto: test-contrato-api-plataform-influencer ·
+      Abra este arquivo no Chrome para apresentar ·
+      Broker: <a href="http://localhost:9292" target="_blank" rel="noopener">localhost:9292</a>
+    </div>
+  </main>
+</body>
+</html>

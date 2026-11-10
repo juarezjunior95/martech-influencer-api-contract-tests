@@ -1,0 +1,279 @@
+(
+  /* Get datasources for LARGE and SMALL */
+  $dataLarge := $exists(datasources.large) ? datasources.large : [];
+  $dataSmall := $exists(datasources.small) ? datasources.small : [];
+  $data := $count($dataLarge) > 0 ? $dataLarge : $dataSmall;
+  $kpi := $count($data) > 0 ? $data[0].kpi_name : "";
+  $isEmpty := $count($dataLarge) = 0 and $count($dataSmall) = 0;
+  /* Configuration */
+  $config := {
+    "variation": { "unit_measure_percent": "%" },
+    "viewtype_config": {
+      "brand": {
+        "key": "raw_brand",
+        "image": { "object_key": "brand", "image_key": "imageSquare" },
+        "total_key": "step_name",
+        "total_image": { "object_key": "country", "image_key": "imageIcon" }
+      },
+      "country": { "key": "step_name", "image": { "object_key": "country", "image_key": "imageIcon" }, "total_image": { "object_key": "country", "image_key": "imageIcon" } },
+      "portfolio": { "key": "step_name", "total_image": { "object_key": "country", "image_key": "imageIcon" } },
+      "sub_brand": { "key": "step_name", "total_image": { "object_key": "brand", "image_key": "imageSquare" } },
+      "beer_price_segment": { "key": "step_name", "total_image": { "object_key": "country", "image_key": "imageIcon" } },
+      "brand_country": {
+        "key": "raw_brand",
+        "image": { "object_key": "brand", "image_key": "imageSquare" },
+        "badge_key": "country_iso_code_3",
+        "badge_image": { "object_key": "country", "image_key": "imageIcon" },
+        "total_image": { "object_key": "country", "image_key": "imageIcon" }
+      }
+    }
+  };
+  /* Finance formatter uses $dataLarge[1] (second row) to determine waterfallType - with fallback handling */
+  $sampleData := $count($dataLarge) > 1 ? $dataLarge[1] : ($count($dataLarge) > 0 ? $dataLarge[0] : ($count($dataSmall) > 0 ? $dataSmall[0] : {}));
+  $countryField :=
+  $exists($sampleData.country_iso_code_3) and $sampleData.country_iso_code_3 != ""
+    ? "country_iso_code_3"
+    : $exists($sampleData.country) and $sampleData.country != ""
+      ? "country"
+      : "";
+
+$waterfallType :=
+  $exists($sampleData.beer_price_segment) and $sampleData.beer_price_segment != ""
+    ? "beer_price_segment"
+  : $exists($sampleData.portfolio) and $sampleData.portfolio != ""
+    ? "portfolio"
+  : $exists($sampleData.sub_brand) and $sampleData.sub_brand != ""
+    ? "sub_brand"
+  : (
+  $middleData := $filter($data, function($d, $i){
+    $i > 0 and $i < ($count($data) - 1)
+  });
+
+  $count(
+    $distinct(
+      $filter($middleData, function($d){
+        $exists($d.country_iso_code_3)
+        and $d.country_iso_code_3 != null
+        and $d.country_iso_code_3 != ""
+        and $d.country_iso_code_3 != "ABI"
+      }).country_iso_code_3
+    )
+  ) > 0
+  and
+  $count(
+    $filter($middleData, function($d){
+      $exists($d.raw_brand) and $d.raw_brand != ""
+    })
+  ) > 0
+)
+? "brand_country"
+  : $exists($sampleData.raw_brand) and $sampleData.raw_brand != ""
+    ? "brand"
+  : $countryField != ""
+    ? "country"
+  : "country";
+
+  $viewtypeConfig := $lookup($config.viewtype_config, $waterfallType);
+  /* Helpers */
+  $formatDateToQuarter := function($dateString) {
+    ($exists($dateString) and $dateString != null
+      ? (
+        $year := $substring($dateString, 0, 4);
+        $month := $number($substring($dateString, 5, 2));
+        $yearLastTwo := $substring($year, 2, 2);
+        $quarter := $month <= 3 ? 1 : ($month <= 6 ? 2 : ($month <= 9 ? 3 : 4));
+        "Q" & $string($quarter) & "'" & $yearLastTwo
+      )
+      : "-")
+  };
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number" ?
+      $formatNumber($value, "#,##0.0")
+      : "-"
+  };
+
+  $isValidNumber := function($val) {
+    $exists($val) and $type($val) = "number" and $string($val) != "NaN" and $abs($val) != 1/0
+  };
+  $formatLargeNumber := function($value) {
+    $isValidNumber($value) ? (
+      $sign := $value < 0 ? "-" : "";
+      $absVal := $abs($value);
+      $absVal > 1000000 ? $sign & $formatNumber($absVal / 1000000, '#,##0.0') & "M" :
+      $absVal > 1000 ? $sign & $formatNumber($absVal / 1000, '#,##0.0') & "k" :
+      $sign & $formatNumber($absVal, '#,##0.0')
+    ) : "-"
+  };
+
+  $getDirection := function($direction) { $direction = "up" ? "positive" : "negative" };
+  /* Resolve image URL from nested object: imageConfig has object_key (e.g. "brand") and image_key (e.g. "imageSquare") */
+  $getImageUrl := function($d, $imageConfig) {
+    $exists($imageConfig) and $exists($imageConfig.object_key)
+      ? $lookup($lookup($d, $imageConfig.object_key), $imageConfig.image_key)
+      : ""
+  };
+  /* Main output */
+  $isEmpty
+    ? { "empty": true }
+    : (
+      $buildStructure := function($dataSubset) {
+        (
+          $isEmptySubset := $count($dataSubset) = 0;
+          $hasValidData := $exists($dataSubset.ac[$type($) = "number" and $ != 0][0]);
+          ($isEmptySubset or $hasValidData = false)
+            ? {}
+            : (
+              /* Bars */
+              $dataArray := $dataSubset.ac;
+              $formattedValues := $map($dataArray, $formatLargeNumber);
+              /* Labels */
+              $labelsArray := $waterfallType = "brand_country"
+                ? $map($dataSubset, function($d, $i) {
+                    [
+                      $d.raw_brand,
+                      ($i = 0 or $i = ($count($dataSubset) - 1)) and ($d.country_iso_code_3 = "ABI" or $d.country_iso_code_3 = "EUR") ? "" : $d.country_iso_code_3                    ]
+                  })
+                : $waterfallType = "brand"
+                  ? $map($dataSubset, function($d) {
+                      [
+                        $exists($d.raw_brand) and $d.raw_brand != null and $d.raw_brand != "" ? $d.raw_brand : $d.step_name
+                      ]
+                    })
+                  : $map($dataSubset, function($d, $i) {
+                      $i = 0 or $i = ($count($dataSubset) - 1)
+                        ? $d.step_name
+                        : ($lookup($d, $viewtypeConfig.key) != "" and $lookup($d, $viewtypeConfig.key) != null
+                            ? $lookup($d, $viewtypeConfig.key)
+                            : $d.step_name)
+                    });
+              /* Comparison data */
+              $emptyComparisonPoint := { "value": "", "measure": "", "color": "" };
+              $comparisonData := $map(
+                $dataSubset,
+                function($d, $index) {
+                  (
+                      $vsLyValue := $formatValue($d.ac_vs_ly);
+                      {
+                        "vs_ly": {
+                          "value": $vsLyValue,
+                          "measure": $vsLyValue != "-"
+                            ? ($d.comp_unit_of_measure ? $d.comp_unit_of_measure : $config.variation.unit_measure_percent)
+                            : "",
+                          "trend": $vsLyValue != "-" ? $getDirection($d.variationDirectionVsLy) : ""
+                        }
+                      }
+                  )
+                }
+              );
+              $comparisonLineData := {
+                "data": [{
+                  "title": "vs LY",
+                  "data": $comparisonData.vs_ly
+                }]
+              };
+
+              /* Images */
+              $brandsImgType :=
+                $waterfallType = "brand_country" ? "badged_img"
+                  : $waterfallType in ["brand", "country"] ? "main_images"
+                  : "plain";
+
+             $brandsImg_brandCountry := $brandsImgType = "badged_img"
+                ? ($brandsImg := $map(
+                  $dataSubset,
+                  function($d,$i) {
+                    (
+                      $isFirst := $i = 0;
+                      $isLast := $i = $count($dataSubset) - 1;
+                      $badgeFlag := $d.step_name = "Others" or $isFirst or $isLast
+                        ? undefined
+                        : { "src": $getImageUrl($d, $viewtypeConfig.badge_image), "alt": $lookup($d, $viewtypeConfig.badge_key) };
+                      $keyData := $lookup($d, $viewtypeConfig.key) = "" ? $d.step_name : $lookup($d, $viewtypeConfig.key);
+                      $mainBrandImageConfig := ($isFirst or $isLast)
+                        ? { "object_key": "country", "image_key": "imageIcon" }
+                        : $viewtypeConfig.image;
+                      {
+                        "mainBrand": { "src": $getImageUrl($d, $mainBrandImageConfig), "alt": $keyData },
+                        "badgeFlag": $badgeFlag,
+                        "title": $keyData
+                      }
+                    )
+                  }
+                ))
+                : undefined;
+
+                /* Default Image List*/
+                $brandsImg_default := $brandsImgType = "main_images" ? $map(
+                  $dataSubset,
+                  function($d, $index) {(
+                    $isFirst := $index = 0;
+                    $isLast := $index = $count($dataSubset) - 1;
+                    $isTotal := $isFirst or $isLast;
+                    $isBrandType := $waterfallType = "brand" or $waterfallType = "brand_country";
+
+                    $imageConfig := ($isBrandType and ($isFirst or $isLast))
+                      ? { "object_key": "country", "image_key": "imageIcon" }
+                      : ($isTotal ? $viewtypeConfig.total_image : $viewtypeConfig.image);
+
+                    $image := $getImageUrl($d, $imageConfig);
+
+                    $key := $isTotal ?
+                      ($exists($viewtypeConfig.total_key) and $viewtypeConfig.total_key != ""
+                        ? $lookup($d, $viewtypeConfig.total_key)
+                        : $d.step_name)
+                      : $lookup($d, $viewtypeConfig.key);
+
+                    {
+                      "mainBrand": {
+                        "src": $image,
+                        "alt": $key
+                      },
+                      "title": $key
+                    }
+                  )}
+                ) : undefined;
+
+                $brandsImg_plain :=  $brandsImgType = "plain" ? $map(
+                  $dataSubset,
+                  function($d, $index) {(
+                    $isTotal := ($index = 0) or ($index = $count($dataSubset) - 1);
+                    $title := $isTotal ? $d.step_name : $lookup($d, $viewtypeConfig.key);
+
+                    {
+                      "mainBrand": {
+                        "src": $isTotal ? $getImageUrl($d, $viewtypeConfig.total_image) : "",
+                        "alt": $isTotal ? $d.step_name : $lookup($d, $viewtypeConfig.key)
+                      },
+                      "title": $title
+                    }
+                  )}
+                ) : undefined;
+
+
+              {
+                "values": $dataArray,
+                "labels": $labelsArray,
+                "formattedData": [
+                  [$formattedValues]
+                ],
+                "images": {
+                  "data": $exists($brandsImg_brandCountry)
+                            ? $brandsImg_brandCountry
+                            : $exists($brandsImg_default)
+                              ? $brandsImg_default
+                              : $exists($brandsImg_plain)
+                                ? $brandsImg_plain
+                                : undefined
+                },
+                "comparisonLine": $comparisonLineData
+              }
+            )
+        )
+      };
+      $largeResult := $buildStructure($dataLarge);
+      $smallResult := $buildStructure($dataSmall);
+      $hasLargeData := $count($keys($largeResult)) > 0;
+      $hasSmallData := $count($keys($smallResult)) > 0;
+      $hasLargeData or $hasSmallData ? { "large": $largeResult, "small": $smallResult } : { "empty": true }
+    )
+)

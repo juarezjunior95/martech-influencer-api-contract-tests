@@ -1,0 +1,137 @@
+(
+  /**
+   * 🎯 Component: Non-Working Money Table (by country)
+   * 📍 Used on: Resource Allocation Media > Overview
+   * 🔄 Input: connections-and-creativity_resource-allocation-media_overview_non-working-money-table
+   * 📤 Output: resource_allocation { header, rows }
+   * 🔧 Config: country_map, color_ly_*, color_bu_*, bg_guideline_*, color_guideline_*, header, unit_of_measure
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "color_ly_up": "#A20A0A",
+    "color_ly_down": "#49764B",
+    "color_bu_positive": "#A20A0A",
+    "color_bu_negative": "#49764B",
+    "bg_guideline_positive": "#FFE6E6",
+    "bg_guideline_negative": "#E6F9E6",
+    "color_guideline_positive": "#A20A0A",
+    "color_guideline_negative": "#49764B",
+    "header": {
+      "countries_title": "Countries",      
+      "ly_title": "vs LY",      
+      "bu_title": "vs BU",
+      "guideline_title": "vs Guideline",
+      "ac_suffix": " AC",
+      "bu_suffix": " BU"
+    },
+    "unit_of_measure": "pp"
+  };
+
+  $countryMap := $getCountryMap();
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $dsKey := $keys($datasources)[0];
+  $ds := $lookup($datasources, $dsKey);
+  $data := $exists($ds.data) ? $ds.data : ($exists($ds) and $type($ds) = "array" ? $ds : []);
+
+  $firstRow := $count($data) > 0 ? $data[0] : {};
+  $hasBrands := $count($data[raw_brand != "N/A"]) > 0;
+  $lyLabel := $exists($firstRow.lyMonthLabel) ? $firstRow.lyMonthLabel : $formatDateToMonth($string($firstRow.dt_ini));
+  $lyShortYear := $contains($lyLabel, "'") ? $split($lyLabel, "'")[1] : "";
+  $currLabel := $exists($firstRow.refreshMonthLabel) ? $firstRow.refreshMonthLabel : $formatDateToMonth($string($firstRow.dt_end));
+  $currShortYear := $contains($currLabel, "'") ? $split($currLabel, "'")[1] : "";
+
+  $header := [
+    $hasBrands ? { "id": "brands", "title": "Brands" } : { "id": "countries", "title": "Countries" },
+    { "id": "previous_year_AC", "title": $lyShortYear & $config.header.ac_suffix },
+    { "id": "current_year_BU", "title": $currShortYear & $config.header.bu_suffix },
+    { "id": "current_year_AC", "title": $currShortYear & $config.header.ac_suffix },
+    { "id": "ly", "title": $config.header.ly_title },
+    { "id": "bu", "title": $config.header.bu_title },
+    { "id": "guideline", "title": $config.header.guideline_title }
+  ];
+
+  $valueOrDash := function($val) {
+    $exists($val) and $type($val) = "number" ? $val : "-"
+  };
+
+  $pctUnit := function($val) {
+    $exists($val) and $type($val) = "number" ? "%" : ""
+  };
+
+  $rowToCell := function($row) {
+    (
+      $hasAcVsLy := $exists($row.ac_vs_ly) and $type($row.ac_vs_ly) = "number";
+      $lyDirection := $hasAcVsLy and $row.ac_vs_ly < 0
+        ? $config.color_ly_down
+        : $config.color_ly_up;
+      $lyCell := $hasAcVsLy
+        ? {
+            "value": $row.ac_vs_ly,
+            "unitMeasure": $config.unit_of_measure,
+            "variationDirection": $lyDirection
+          }
+        : { "value": "-", "variationDirection": $config.color_ly_up };
+      $acVsBu := $row.ac_vs_bu;
+      $hasAcVsBu := $exists($acVsBu) and $type($acVsBu) = "number";
+      $buDirection := $hasAcVsBu and $acVsBu < 0 ? $config.color_bu_negative : $config.color_bu_positive;
+      $buCell := $hasAcVsBu
+        ? {
+            "value": $acVsBu,
+            "unitMeasure": $config.unit_of_measure,
+            "variationDirection": $buDirection
+          }
+        : { "value": "-", "variationDirection": $config.color_ly_up };
+      $vsGuideline := $row.vs_guideline;
+      $hasVsGuideline := $exists($vsGuideline) and $type($vsGuideline) = "number";
+      $guidelineTag := $hasVsGuideline
+        ? {
+            "value": $string($vsGuideline) & $config.unit_of_measure,
+            "color": $vsGuideline < 0 ? $config.color_guideline_negative : $config.color_guideline_positive,
+            "backgroundColor": $vsGuideline < 0 ? $config.bg_guideline_negative : $config.bg_guideline_positive
+          }
+        : {
+            "value": "-" & $config.unit_of_measure,
+            "color": $config.color_guideline_positive,
+            "backgroundColor": $config.bg_guideline_positive
+          };
+      $merge([
+        $row.raw_brand = "N/A"
+          ? { "countries": { "value": $lookup($countryMap, $row.country_iso_code_3) ?: $row.country_iso_code_3 } }
+          : { "brands": { "value": $row.raw_brand } },
+        {
+        "previous_year_AC": {
+          "value": $valueOrDash($row.ly),
+          "unitMeasure": $pctUnit($row.ly)
+        },
+        "current_year_BU": {
+          "value": $valueOrDash($row.bu),
+          "unitMeasure": $pctUnit($row.bu)
+        },
+        "current_year_AC": {
+          "value": $valueOrDash($row.ac),
+          "unitMeasure": $pctUnit($row.ac)
+        },
+        "ly": $lyCell,
+        "bu": $buCell,
+        "guideline": { "tag": $guidelineTag }
+        }
+      ])
+    )
+  };
+
+  $count($data) = 0
+    ? { "resource_allocation": { "empty": true } }
+    : (
+      $rows := [ [ $map($data, $rowToCell) ], [] ];
+
+      {
+        "resource_allocation": {
+          "header": $header,
+          "rows": $rows
+        }
+      }
+    )
+)

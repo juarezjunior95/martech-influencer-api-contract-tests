@@ -1,0 +1,95 @@
+/* *
+ * 🔢 BRAND BREAKDOWN FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: BrandPowerBook > Brand Breakdown table
+ * 🔄 Input: summary_power_brand_breakdown data
+ * 📤 Output: TableData interface */
+ 
+ (
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+  $ownership:= $distinct($lookup($data ,"ownership" ));
+
+  $config := {
+    "variation": { "unit_measure": "pp" },
+    "direction": { "up": "#49764B", "down": "#A20A0A" },
+  "legend": {
+      "abi": "#EDCD20",
+      "comp": "#97ADBB"
+    },    
+    "kpis": [
+      { "name": "power", "prefix": "brand_power", "title": "Brand Power", "fixedMax": 100 },
+      { "name": "meaningful", "prefix": "meaning", "title": "Meaning" },
+      { "name": "difference", "prefix": "difference", "title": "Difference" },
+      { "name": "salience", "prefix": "salience", "title": "Salience" }
+    ]
+  };
+
+  $count($data) = 0
+    ? { "empty": true }
+    : (
+        $filteredData:= $filter($data, function($item) { $lowercase($item.level_1) = $ownership });
+        $brands := $distinct($filteredData.raw_brand);
+        $lyLabel := "vs " & $formatLyQuarter($data[0].dt_end);
+
+        $maxForKpi := function($kpiName) {
+          $max($filter($data, function($row) { $row.kpi_name = $kpiName }).ac)
+        };
+
+        $header := $append(
+          [{ "title": "", "children": [{"id":"page_type", "title": ""},{ "id": "id", "title": "" }] }],
+          $map($config.kpis, function($kpi) {
+            {
+              "title": $kpi.title,
+              "children": [
+                { "id": $kpi.prefix & "_ac", "title": "AC" },
+                { "id": $kpi.prefix & "_ly", "title": $lyLabel }
+              ]
+            }
+          })
+        );
+
+        $rows := $map($brands, function($brandName) {
+          (
+            $brandRows := $filter($data, function($row) { $row.raw_brand = $brandName });
+            $color := $ownership = "comp" ? $config.legend.comp : $config.legend.abi;
+
+            $base := {
+              "id": { "value": $brandName }
+            };
+
+            $kpiCells := $merge(
+              $map($config.kpis, function($kpi) {
+                (
+                  $kpiRow := $filter($brandRows, function($row) { $row.kpi_name = $kpi.name  })[0];
+                  $maxVal := $exists($kpi.fixedMax) ? $kpi.fixedMax : $maxForKpi($kpi.name);
+                  {
+                    "page_type":{"value": $ownership = "abi" ? $kpiRow.segment : $kpiRow.price_tier },
+
+                    ($kpi.prefix & "_ac"): {
+                      "chartData": {
+                        "data": [$kpiRow.ac],
+                        "backgroundColor": [$color],
+                        "max": $maxVal
+                      }
+                    },
+                    ($kpi.prefix & "_ly"): {
+                      "unitMeasure": $config.variation.unit_measure,
+                      "variationDirection": $getColorUpDown($kpiRow.ac_vs_ly,$config.direction.up, $config.direction.down),
+                      "value": $kpiRow.ac_vs_ly
+                    }
+                  }
+                )
+              })
+            );
+
+            $merge([$base, $kpiCells])
+          )
+        });
+
+        {
+          "header": $header,
+          "rows": [[$rows]]
+        }
+      )
+)

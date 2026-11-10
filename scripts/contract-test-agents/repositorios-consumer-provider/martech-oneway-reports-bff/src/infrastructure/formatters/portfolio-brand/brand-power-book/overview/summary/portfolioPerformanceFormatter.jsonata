@@ -1,0 +1,64 @@
+/**
+ * 🔢 PORTFOLIO PERFORMANCE FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: BrandPowerBook > Overview > Summary > Portfolio Performance
+ * 🔄 Input: summary-power_by-portfolio-performance data
+ * 📤 Output: TableData with header and rows
+ * 🔧 Helpers: formatLyQuarter
+ */
+(
+  $ds := $keys($.datasources)[0];
+  $data := $lookup($.datasources, $ds);
+
+  $config := {
+    "variation": {
+      "unit_measure": "pp"
+    },
+    "direction": {
+      "up": "#49764B",
+      "down": "#A20A0A"
+    },
+    "legend": {
+      "color": "#EDCD20",
+      "selected_color": "#EDDAB1"
+    },
+    "labels": {
+      "tt_abi": "TT ABI"
+    }
+  };
+
+  $count($data) = 0
+    ? { "empty": true }
+    : {
+        "header": [
+          { "id": "id", "title": "" },
+          { "id": "ac", "title": "AC" },
+          { "id": "ly", "title": "vs " & $formatLyQuarter($data[0].dt_end) }
+        ],
+        "rows": [
+          [
+            $map(
+              $data,
+              function($item) {
+                {
+                  "id": { "value": $item.segment = "N/A" ? $config.labels.tt_abi : $item.segment },
+                  "type": { "value": $uppercase($item.level_1) = "COMP" ? "competitor" : "abi" },
+                  "ac": {
+                    "chartData": {
+                      "data": [$item.ac],
+                      "backgroundColor": [$config.legend.color],
+                      "secondaryBackgroundColor": [$config.legend.selected_color]
+                    }
+                  },
+                  "ly": {
+                    "unitMeasure": $config.variation.unit_measure,
+                    "variationDirection": $getColorUpDown($item.ac_vs_ly, $config.direction.up, $config.direction.down),
+                    "value": $item.ac_vs_ly
+                  }
+                }
+              }
+            )
+          ]
+        ]
+      }
+)

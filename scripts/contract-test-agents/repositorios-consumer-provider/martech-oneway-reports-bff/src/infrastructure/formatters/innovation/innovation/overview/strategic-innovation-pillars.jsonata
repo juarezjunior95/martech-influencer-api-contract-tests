@@ -1,0 +1,353 @@
+/** 
+* 🔢 INNOVATION PILLARS FORMATTER 
+* 🎯 Component: Innovation Pillars 
+* 📍 Used on: Innovation > Overview > Strategic Innovation Pillars 
+* 🔄 Input: innovation_innovation_overview_strategic-innovation-pillars data + innovation_innovation_overview_portfolio-health-phi data
+* 📤 Output: InnovationPillars interface */
+
+(
+  $renovationData := datasources."strategic-innovation-pillars-renovation";
+  $packPriceData := datasources."strategic-innovation-pillars-pack-price";
+  $newOpportunitiesData := datasources."strategic-innovation-pillars-new-opportunities";
+  $portfolioHealthData := datasources."innovation_innovation_overview_portfolio-health-phi";
+  
+  $data := [
+    $renovationData,
+    $packPriceData,
+    $newOpportunitiesData
+  ]~>$reduce(function($acc, $current) { $append($acc, $current) }, []);
+  
+  /* Configuration */
+  $config := {
+    "direction": { "up": "#007800", "down": "#B91C1C" },
+    "connector_direction": {
+      "bg_color": {"up": "#E6F9E6", "down": "#FFE6E6" },
+      "text_color": { "up": "#007800", "down": "#BA0B0B" }
+    },
+    "pillars": [
+      {
+        "pillar_id": "portfolio",
+        "pillar_level": "portfolio"
+      },
+      {
+        "pillar_id": "packPrice",
+        "pillar_level": "pack_price",
+        "headerColor": "#F7EFBB",
+        "connector_measure": "%",
+        "chart_config": [
+          { "label": "Dataset 1", "bar_column": "ac", "background_color": "#D3E3EE" }],
+        "comparison_config": {
+          "title": "vs LY",
+          "comparison_column": "variationDirectionVsLy"
+        },
+        "big_number_config": {
+          "id": "packPriceBigNumber",
+          "data_config": [
+              {
+                "data_column": "ac_vs_ly"
+              }
+            ]
+        }
+      },
+      {
+        "pillar_id": "renovation",
+        "pillar_level": "renovation",
+        "kpi_name_filter": "innovation_superiority",
+        "headerColor": "#DCE1FA",
+        "connector_measure": "pp",
+        "connector_calculate_difference": true,
+        "convert_period_to_quarter": true,
+        "chart_config": [
+          { "label": "Renovation", "bar_column": "ac", "background_color": "#D3E3EE" }],
+        "comparison_config": {
+          "title": "vs LY",
+          "comparison_column": "variationDirectionVsLy"
+        },
+        "big_number_config": {
+          "id": "renovationBigNumber",
+          "data_config": [
+              {
+                "data_column": "ac_vs_ly"
+              }
+            ]
+        }
+      },
+      {
+        "pillar_id": "newOpportunities",
+        "pillar_level": "new_opportunities",
+        "headerColor": "#D5F2E6",
+        "connector_measure": "%",
+        "chart_config": [
+          { "label": "Dataset 1", "bar_column": "ac", "background_color": "#D3E3EE" }],
+        "comparison_config": {
+          "title": "vs LY",
+          "comparison_column": "variationDirectionVsLy"
+        },
+        "big_number_config": {
+          "id": "newOpportunitiesBigNumber",
+          "data_config": [
+              {
+                "data_column": "ac_vs_ly"
+              }
+            ]
+        }
+      }
+    ]
+  };
+  
+  /* Format number with thousands separator and one decimal place (#,##0.0) */
+  $formatNumberWithCommas := function($val) { 
+    $type($val) = "number" ?
+      $formatNumber($val, "#,##0.0")
+      : "-" 
+  };
+
+  /* Get trend from direction */
+  $getTrend := function($direction) {
+    $direction = "up" ? "positive" : ($direction = "down" ? "negative" : "neutral")
+  };
+
+  $convertToQuarterLabel := function($monthLabel) {
+    (
+      $parts := $split($monthLabel, "'");
+      $month := $parts[0];
+      $year := $parts[1];
+      $validMonths := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      
+      /* Validate input format and month value */
+      $parts[1] and $month in $validMonths ?
+        (
+          $quarter := $month in ["Jan", "Feb", "Mar"] ? "Q1"
+            : $month in ["Apr", "May", "Jun"] ? "Q2"
+            : $month in ["Jul", "Aug", "Sep"] ? "Q3"
+            : "Q4";
+          
+          $quarter & "'" & $year
+        )
+        : "-"
+    )
+  };
+
+  /* Process Portfolio Health Pillar */
+  $processPortfolioHealth := function($pillarData, $pillarConfig) {
+    (
+      $count($pillarData) = 0 ?
+        {
+          "id": $pillarConfig.pillar_id,
+          "health": {},
+          "noticeMessage": "Data not available for this country"
+        }
+        :
+        (
+          /* Separate innovation and mature data */
+          $innovationData := $pillarData[level_1 = "innovation"][0];
+          $matureData := $pillarData[level_1 = "mature"][0];
+
+          $legend := $map(
+            $pillarData,
+            function($item) {
+              {
+                "label": $uppercase($substring($item.level_1, 0, 1)) & $substring($item.level_1, 1)
+              }
+            }
+          );
+
+          $bigNumbers := [
+            {
+              "data": [
+                {
+                  "bigNumber": {
+                    "value": $formatNumberWithCommas($innovationData.ac),
+                    "measure": ""
+                  },
+                  "comparison": {
+                    "label": "vs",
+                    "value": $innovationData.lyMonthLabel,
+                    "number": {
+                      "value": $formatNumberWithCommas($innovationData.ac_vs_ly),
+                      "measure": $innovationData.comp_unit_of_measure,
+                      "trend": $getTrend($innovationData.variationDirectionVsLy)
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "data": [
+                {
+                  "bigNumber": {
+                    "value": $formatNumberWithCommas($matureData.ac),
+                    "measure": ""
+                  },
+                  "comparison": {
+                    "label": "vs",
+                    "value": $matureData.lyMonthLabel,
+                    "number": {
+                      "value": $formatNumberWithCommas($matureData.ac_vs_ly),
+                      "measure": $matureData.comp_unit_of_measure,
+                      "trend": $getTrend($matureData.variationDirectionVsLy)
+                    }
+                  }
+                }
+              ]
+            }
+          ];
+
+          {
+            "id": $pillarConfig.pillar_id,
+            "health": {
+              "id": "health",
+              "period": $pillarData[0].refreshMonthLabel,
+              "bigNumbers": $bigNumbers,
+              "legend": $legend
+            }
+          }
+        )
+    )
+  };
+
+  /* Get connector direction */
+  $map(
+      $config.pillars,
+      function($pillarConfig) {
+        (
+          /* Pillar data gathering - use portfolio health data for portfolio pillar */
+          $pillarData := $pillarConfig.pillar_id = "portfolio" 
+            ? $portfolioHealthData
+            : $exists($pillarConfig.kpi_name_filter) 
+              ? $data[kpi_name = $pillarConfig.kpi_name_filter]
+              : $data[level_1 = $pillarConfig.pillar_level];
+
+          /* Check if it's portfolio pillar */
+          $pillarConfig.pillar_id = "portfolio" ?
+            $processPortfolioHealth($pillarData, $pillarConfig)
+            :
+            (
+              $count($pillarData) = 0 ?
+                (
+                  $pillarConfig.pillar_id = "renovation" ?
+                    {
+                      "id": $pillarConfig.pillar_id,
+                      "headerColor": $pillarConfig.headerColor,
+                      "chartSection": {},
+                      "noticeMessage": "Data not available for this country"
+                    }
+                    :
+                    {
+                      "id": $pillarConfig.pillar_id,
+                      "headerColor": $pillarConfig.headerColor,
+                      "chartSection": {}
+                    }
+                )
+                :
+                (
+                  $bigNumberInfo := $pillarData[-1];
+
+              $labels := $pillarData.$substring(dt_end, 0, 4);
+              $datasets := $map(
+                $pillarConfig.chart_config,
+                function($datasetConfig) {(
+                  $datasetDataValue := $lookup($pillarData, $datasetConfig.bar_column);
+                  { 
+                    "label": $datasetConfig.label, 
+                    "data": $datasetDataValue, 
+                    "backgroundColor": $datasetConfig.background_color
+                  }
+                )}
+              );
+              
+              $comparisonLine := {
+                "title": $pillarConfig.comparison_config.title,
+                "data": $map(
+                  $pillarData, 
+                  function($chartInfoPoint) {
+                    (
+                      $value := $formatNumberWithCommas($chartInfoPoint.ac_vs_ly);
+                      $compDirection := $lookup($chartInfoPoint, $pillarConfig.comparison_config.comparison_column);
+                      
+                      {
+                        "value": $value,
+                        "measure": $value != "-" ? $chartInfoPoint.comp_unit_of_measure : "",
+                        "color": $value != "-" ? $lookup($config.direction, $compDirection) : "#5C5C5C"
+                      }
+                    )
+                  }
+                )
+              };
+              
+              /* Add connector if connector_measure exists */
+              $hasConnector := $exists($pillarConfig.connector_measure);
+              
+              /* Calculate connector value and direction based on configuration */
+              $connectorValue := $pillarConfig.connector_calculate_difference = true
+                ? ($pillarData[-1].ac - $pillarData[0].ac)
+                : $pillarData[0].average_line;
+              
+              $connectorDirection := $pillarConfig.connector_calculate_difference = true
+                ? ($connectorValue >= 0 ? "up" : "down")
+                : $pillarData[0].average_line_direction;
+              
+              $pillarChart := $hasConnector ? 
+                {
+                  "datasets": [$datasets],
+                  "labels": $labels,
+                  "datasetsSum": $datasets.data,
+                  "connector": {
+                    "value": $formatNumberWithCommas($connectorValue),
+                    "from": $labels[0],
+                    "to": $labels[-1],
+                    "backgroundColor": $lookup($config.connector_direction.bg_color, $connectorDirection),
+                    "textColor": $lookup($config.connector_direction.text_color, $connectorDirection),
+                    "measure": $pillarConfig.connector_measure
+                  },
+                  "comparisonLine": $comparisonLine
+                } :
+                {
+                  "datasets": [$datasets],
+                  "labels": $labels,
+                  "comparisonLine": $comparisonLine
+                };
+
+              /* Big Number Data Gathering */
+              $bigNumberData := $map(
+                $pillarConfig.big_number_config.data_config,
+                function($dataConfig) {
+                  (
+                    $bigNumberValue := $lookup($bigNumberInfo, $dataConfig.data_column);
+                    $showVariationInComparison := $dataConfig.show_variation_in_comparison = true;
+                    
+                    {
+                      "bigNumber": $showVariationInComparison ? 
+                        {"value": $formatNumberWithCommas($bigNumberValue), "measure": $bigNumberInfo.unit_of_measure, "color": "#007800"} :
+                        {"value": $formatNumberWithCommas($bigNumberValue), "measure": $bigNumberInfo.comp_unit_of_measure, "color": $lookup($config.direction, $bigNumberInfo.variationDirectionVsLy)},
+                      "comparison": {
+                        "label": "vs",
+                        "value": $pillarConfig.pillar_id = "renovation" ? $convertToQuarterLabel($bigNumberInfo.lyMonthLabel) : $bigNumberInfo.lyMonthLabel
+                      }
+                    }
+                  )
+                }
+              );
+              
+              $bigNumber := {
+                "id": $pillarConfig.big_number_config.id,
+                "period": $pillarConfig.convert_period_to_quarter = true
+                  ? $convertToQuarterLabel($bigNumberInfo.refreshMonthLabel)
+                  : $bigNumberInfo.refreshMonthLabel,
+                "data": [$bigNumberData]
+              };
+
+              {
+                "id": $pillarConfig.pillar_id,
+                "headerColor": $pillarConfig.headerColor,
+                "chartSection": { 
+                  "bigNumber": $bigNumber,
+                  "chart": $pillarChart 
+                }
+              }
+            )
+          )
+        )
+      }
+    )
+)

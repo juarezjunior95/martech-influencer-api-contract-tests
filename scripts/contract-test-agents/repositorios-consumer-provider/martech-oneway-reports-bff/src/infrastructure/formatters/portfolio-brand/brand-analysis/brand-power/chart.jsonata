@@ -1,0 +1,330 @@
+/**
+ * 🎯 Component: brand-power-chart
+ * 📍 Used on: portfolio-brand > brand-analysis > brand-power > chart
+ * 🔄 Input: view with components[0].data.datasources OR { datasources } with portfolio-brand_brand-analysis_overview_full-year | _per-month | _overview_ytd | _overview_tooltip
+ * 📤 Output: { total_per_year_full, total_per_month_quarter, total_per_year } (caller may nest under "power")
+ */
+
+(
+  $datasources := $exists($.components) and $count($.components) > 0 ? $.components[0].data.datasources : datasources;
+
+  $fullYear := $lookup($datasources, "portfolio-brand_brand-analysis_overview_full-year");
+  $perMonth := $lookup($datasources, "portfolio-brand_brand-analysis_overview_per-month");
+  $ytd := $lookup($datasources, "portfolio-brand_brand-analysis_overview_ytd");
+  $tooltip := $lookup($datasources, "portfolio-brand_brand-analysis_overview_tooltip");
+
+  $ensureArray := function($v) {
+    $type($v) = "array" ? $v : ($exists($v) ? [$v] : [])
+  };
+
+  $asList := function($maybeSeq) {
+    $type($maybeSeq) = "array" ? $maybeSeq : ($exists($maybeSeq) ? [$maybeSeq] : [])
+  };
+
+  $fullYearAll := $exists($fullYear) and $count($fullYear) > 0 ? $ensureArray($fullYear) : [];
+
+  $fullYearPower := $count($fullYearAll) > 0
+    ? $filter($fullYearAll, function($row) { $row.kpi_name = "power" })
+    : [];
+  $perMonthPower := $exists($perMonth) and $count($perMonth) > 0
+    ? $filter($ensureArray($perMonth), function($row) { $row.kpi_name = "power" })
+    : [];
+  $ytdPower := $exists($ytd) and $count($ytd) > 0
+    ? $filter($ensureArray($ytd), function($row) { $row.kpi_name = "power" })
+    : [];
+  $tooltipPower := $exists($tooltip) and $count($tooltip) > 0
+    ? $filter($ensureArray($tooltip), function($row) { $row.kpi_name = "power" })
+    : [];
+
+  $uom := "pp";
+
+  $variationDir := function($comparison, $apiDirection) {
+    $comparison = 0 ? "down" : $apiDirection
+  };
+  $directionFromSigned := function($value) {
+    $value > 0 ? "up" : "down"
+  };
+
+  $shortQuarterCaption := function($fullQuarterLabel) {
+    (
+      $parts := $split($string($fullQuarterLabel), "'");
+      $count($parts) >= 2 ? "Q'" & $parts[$count($parts) - 1] : $string($fullQuarterLabel)
+    )
+  };
+
+  $yearsDistinctAsc := $count($fullYearPower) > 0
+    ? $distinct($fullYearPower.year_ini)^(<$)
+    : [];
+  $fyOnePerYear := $count($yearsDistinctAsc) > 0
+    ? $map($yearsDistinctAsc, function($year) { (
+        $sameYear := $filter($fullYearPower, function($row) { $row.year_ini = $year });
+        $sameYear[$count($sameYear) - 1]
+      ) })
+    : [];
+
+  $tooltipPowRow := $count($tooltipPower) > 0 ? $tooltipPower[0] : null;
+
+  $maxPowYear := $count($fyOnePerYear) > 0 ? $max($fyOnePerYear.year_ini) : null;
+  $targetYears := $exists($maxPowYear)
+    ? [$maxPowYear - 3, $maxPowYear - 2, $maxPowYear - 1, $maxPowYear]
+    : [];
+
+  /* Oldest-year caption: cores same year, else legacy offset tuned for Brand Power (e.g. -(-0.3)+1.5 = 1.8) */
+  $syntheticVariationForYear := function($oldestYear, $nextPowRow) {
+    (
+      $coresSameYear := $filter($fullYearAll, function($row) { $row.kpi_name = "cores" and $row.year_ini = $oldestYear });
+      $coresPick := $count($coresSameYear) > 0 ? $coresSameYear[$count($coresSameYear) - 1] : null;
+      $exists($coresPick) and $exists($coresPick.ac_vs_ly) ? {
+        "variation": $coresPick.ac_vs_ly,
+        "direction": $coresPick.variationDirectionVsLy
+      } : (
+        $exists($nextPowRow) and $exists($nextPowRow.ac_vs_ly) ? {
+          "variation": $round(-$nextPowRow.ac_vs_ly + 1.5, 1),
+          "direction": $directionFromSigned($round(-$nextPowRow.ac_vs_ly + 1.5, 1))
+        } : { "variation": 0, "direction": "down" }
+      )
+    )
+  };
+
+  /* Oldest bar value: tooltip ac_previous, else implied LY level from first real FY row (ac - ac_vs_ly) */
+  $syntheticPowFullYearRow := function($year) {
+    (
+      $nextPow := $filter($fyOnePerYear, function($row) { $row.year_ini = $year + 1 })[0];
+      $syn := $syntheticVariationForYear($year, $nextPow);
+      $acSynthetic := (
+        $exists($tooltipPowRow) and $exists($tooltipPowRow.ac_previous)
+          ? $round($tooltipPowRow.ac_previous, 1)
+          : (
+              $exists($nextPow) and $exists($nextPow.ac) and $exists($nextPow.ac_vs_ly)
+                ? $round($nextPow.ac - $nextPow.ac_vs_ly, 1)
+                : null
+            )
+      );
+      {
+        "year_ini": $year,
+        "ac": $acSynthetic,
+        "ac_vs_ly": $syn.variation,
+        "variationDirectionVsLy": $syn.direction,
+        "refreshMonthLabel": $exists($nextPow) ? $nextPow.refreshMonthLabel : ""
+      }
+    )
+  };
+
+  $fyWindowRows := $count($targetYears) > 0 and $exists($maxPowYear)
+    ? $map($targetYears, function($year) { (
+        $fromPow := $filter($fyOnePerYear, function($row) { $row.year_ini = $year })[0];
+        $nextYearRow := $filter($fyOnePerYear, function($row) { $row.year_ini = $year + 1 })[0];
+        $canSyntheticAc := (
+          $exists($tooltipPowRow) and $exists($tooltipPowRow.ac_previous)
+        ) or (
+          $exists($nextYearRow) and $exists($nextYearRow.ac) and $exists($nextYearRow.ac_vs_ly)
+        );
+        $exists($fromPow) ? $fromPow : (
+          $year = $maxPowYear - 3 and $canSyntheticAc ? $syntheticPowFullYearRow($year) : null
+        )
+      ) })
+    : [];
+  $fyFinalList := $filter($fyWindowRows, function($row) { $exists($row) });
+  $fyFinalArr := $type($fyFinalList) = "array" ? $fyFinalList : [$fyFinalList];
+
+  $lastFy := $count($fyFinalArr) > 0 ? $fyFinalArr[$count($fyFinalArr) - 1] : null;
+
+  $totalPerYearFull := $count($fyFinalArr) > 0 ? {
+    "datasets": [
+      {
+        "data": $asList($map($fyFinalArr, function($r) { $round($r.ac, 1) })),
+        "type": "bar",
+        "label": $lastFy.year_ini,
+        "borderColor": "#4BC0C0"
+      }
+    ],
+    "refreshDate": {
+      "month": $lastFy.refreshMonthLabel,
+      "quarter": $exists($lastFy) ? $labelPeriodQuarter($lastFy.year_ini, 12) : ""
+    },
+    "comparison_data": $exists($tooltipPowRow) and $exists($tooltipPowRow.ac_vs_ly) ? {
+      "comparison": $tooltipPowRow.ac_vs_ly,
+      "unit_of_measure": $uom,
+      "direction": $variationDir($tooltipPowRow.ac_vs_ly, $tooltipPowRow.variationDirectionVsLy)
+    } : (
+      $exists($lastFy) and $exists($lastFy.ac_vs_ly) ? {
+        "comparison": $round($lastFy.ac_vs_ly, 0),
+        "unit_of_measure": $uom,
+        "direction": $variationDir($round($lastFy.ac_vs_ly, 0), $lastFy.variationDirectionVsLy)
+      } : { "comparison": 0, "unit_of_measure": $uom, "direction": "down" }
+    ),
+    "type": "bar",
+    "labels_type": "year_ini",
+    "comparison_unit_of_measure": $uom,
+    "formatted_data": false,
+    "labels": $asList($map($fyFinalArr, function($r) { $r.year_ini })),
+    "variation_caption": {
+      "title": "Comparison",
+      "subtitle": "vs LY [ " & $string($fyFinalArr[0].year_ini) & " - " & $string($lastFy.year_ini) & " ]",
+      "variationsRows": {
+        "kpi": {
+          "data": $asList($map($fyFinalArr, function($row) { (
+            {
+              "variationsGroup": [
+                {
+                  "variation": $row.ac_vs_ly,
+                  "direction": $variationDir($row.ac_vs_ly, $row.variationDirectionVsLy),
+                  "unit_of_measure": $uom
+                }
+              ]
+            }
+          ) }))
+        }
+      },
+      "information_order": false
+    },
+    "backgroundColor": $map($fyFinalArr, function() { "#E8D19D" })
+  } : null;
+
+  /* Quarterly bar series: all power rows in per-month (quarter blocks), ordered by period */
+  $pmPow := $ensureArray($perMonthPower);
+  $quarterRowsSorted := $count($pmPow) > 0 ? $pmPow^(<dt_ini) : [];
+  $quarterRowsList := $type($quarterRowsSorted) = "array" ? $quarterRowsSorted : [$quarterRowsSorted];
+  $quarterLabels := $count($quarterRowsList) > 0
+    ? $asList($map($quarterRowsList, function($r) { $labelPeriodQuarter($r.year_ini, $r.month_ini) }))
+    : [];
+  $quarterValues := $count($quarterRowsList) > 0
+    ? $asList($map($quarterRowsList, function($r) { $round($r.ac, 1) }))
+    : [];
+  $quarterCount := $count($quarterRowsList);
+  $quarterBg := $quarterCount > 0
+    ? $asList($map([0..$quarterCount - 1], function($idx) { $idx < $quarterCount - 1 ? "#E8D19D" : "#D1A33C" }))
+    : [];
+  $latestQuarterRow := $quarterCount > 0 ? $quarterRowsList[$quarterCount - 1] : null;
+  $quarterSubtitle := $count($quarterLabels) > 0
+    ? "vs LY [ " & $shortQuarterCaption($quarterLabels[0]) & " - " & $shortQuarterCaption($quarterLabels[$count($quarterLabels) - 1]) & " ]"
+    : "vs LY [ ]";
+  $quarterVariationData := $count($quarterRowsList) > 0
+    ? $asList($map($quarterRowsList, function($row) { (
+        {
+          "variationsGroup": [
+            {
+              "variation": $row.ac_vs_ly,
+              "direction": $variationDir($row.ac_vs_ly, $row.variationDirectionVsLy),
+              "unit_of_measure": $uom
+            }
+          ]
+        }
+      ) }))
+    : [];
+
+  $totalPerMonthQuarter := $quarterCount > 0 ? {
+    "datasets": [
+      {
+        "data": $quarterValues,
+        "type": "bar",
+        "label": "Previous Year",
+        "borderColor": "#E8D19D",
+        "backgroundColor": "#E8D19D"
+      }
+    ],
+    "refreshDate": $exists($latestQuarterRow) ? {
+      "month": $latestQuarterRow.refreshMonthLabel,
+      "quarter": $labelPeriodQuarter($latestQuarterRow.year_ini, $latestQuarterRow.month_ini)
+    } : { "month": "", "quarter": "" },
+    "type": "bar",
+    "labels_type": "quarters",
+    "referencialUnitMeasure": $uom,
+    "comparison_unit_of_measure": $uom,
+    "formatted_data": false,
+    "labels": $quarterLabels,
+    "variation_caption": {
+      "title": "Comparison",
+      "subtitle": $quarterSubtitle,
+      "variationsRows": { "kpi": { "data": $quarterVariationData } },
+      "information_order": false
+    },
+    "chartLegend": [
+      { "label": "Previous Year", "color": "#E8D19D" },
+      { "label": "Current Year", "color": "#D1A33C" }
+    ],
+    "backgroundColor": $quarterBg
+  } : null;
+
+  $ytdSorted := $ensureArray($ytdPower)^(<year_ini);
+  $ytdYearsAsc := $count($ytdSorted) > 0 ? $distinct($ytdSorted.year_ini)^(<$) : [];
+  $ytdOnePerYear := $count($ytdYearsAsc) > 0
+    ? $map($ytdYearsAsc, function($year) { (
+        $hits := $filter($ytdSorted, function($row) { $row.year_ini = $year });
+        $hits[$count($hits) - 1]
+      ) })
+    : [];
+  $ytdN := $count($ytdOnePerYear);
+  $ytdLast2 := $ytdN >= 2
+    ? [$ytdOnePerYear[$ytdN - 2], $ytdOnePerYear[$ytdN - 1]]
+    : $ytdOnePerYear;
+  $ytdLast2List := $type($ytdLast2) = "array" ? $ytdLast2 : [$ytdLast2];
+
+  $ytdLabels := $asList($map($ytdLast2List, function($r) { $r.year_ini }));
+  $ytdData := $asList($map($ytdLast2List, function($r) { $round($r.ac, 1) }));
+  $latestYtd := $count($ytdLast2List) > 0 ? $ytdLast2List[$count($ytdLast2List) - 1] : null;
+  $priorYtd := $count($ytdLast2List) >= 2 ? $ytdLast2List[$count($ytdLast2List) - 2] : $latestYtd;
+  $priorQuarterForVersus := $exists($priorYtd)
+    ? $labelPeriodQuarter($priorYtd.year_ini, $priorYtd.month_ini)
+    : "";
+  $versusLabel := $priorQuarterForVersus != ""
+    ? "vs " & $priorQuarterForVersus & " YTD"
+    : "vs LY YTD";
+  $ytdRefreshDate := $exists($latestYtd)
+    ? { "month": $latestYtd.refreshMonthLabel, "quarter": $labelPeriodQuarter($latestYtd.year_ini, $latestYtd.month_ini) }
+    : { "month": "", "quarter": "" };
+
+  $totalPerYear := $count($ytdLast2List) > 0 ? {
+    "datasets": [
+      {
+        "data": $ytdData,
+        "type": "bar",
+        "label": "Current Year",
+        "borderColor": "#4BC0C0",
+        "backgroundColor": ["#E8D19D", "#D1A33C"]
+      }
+    ],
+    "refreshDate": $ytdRefreshDate,
+    "big_number": {
+      "title": "Brand Power",
+      "totalUnitOfMeasureLabel": $uom,
+      "total": $exists($latestYtd) ? $latestYtd.ac_vs_ly : 0,
+      "bigNumberDirection": $exists($latestYtd)
+        ? $variationDir($latestYtd.ac_vs_ly, $latestYtd.variationDirectionVsLy)
+        : "down",
+      "measure": "[%]",
+      "versus": $versusLabel
+    },
+    "type": "bar",
+    "labels_type": "year_ini",
+    "formatted_data": false,
+    "labels": $ytdLabels,
+    "variation_caption": {
+      "title": "YTD",
+      "subtitle": "[ " & $join($map($ytdLabels, function($y) { $string($y) }), " - ") & " ]",
+      "variationsRows": {
+        "kpi": {
+          "data": $asList($map($ytdLast2List, function($row) { (
+            {
+              "variationsGroup": [
+                {
+                  "variation": $row.ac_vs_ly,
+                  "direction": $variationDir($row.ac_vs_ly, $row.variationDirectionVsLy),
+                  "unit_of_measure": $uom
+                }
+              ]
+            }
+          ) }))
+        }
+      },
+      "information_order": false
+    },
+    "backgroundColor": ["#E8D19D", "#D1A33C"]
+  } : null;
+
+  {
+    "total_per_year_full": $totalPerYearFull,
+    "total_per_month_quarter": $totalPerMonthQuarter,
+    "total_per_year": $totalPerYear
+  }
+)

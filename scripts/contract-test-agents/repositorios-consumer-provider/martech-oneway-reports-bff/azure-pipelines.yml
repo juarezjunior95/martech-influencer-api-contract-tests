@@ -1,0 +1,87 @@
+name: $(Build.BuildId)
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+trigger:
+  branches:
+    include:
+      - master
+      - release/*
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: GHQ_B2B_Delta/golden-CICD-library
+      ref: refs/heads/master
+    - repository: uat_bees_microservices
+      type: git
+      name: GHQ_B2B_Delta/bees-microservices
+      ref: refs/heads/uat
+    - repository: prod_bees_microservices
+      type: git
+      name: GHQ_B2B_Delta/bees-microservices
+      ref: refs/heads/prod
+
+variables:
+  - group: BEES-GoldenCICD-Microservice-vg
+  - name: NodeVersion
+    value: '22.x'
+
+extends:
+  template: ms_pipeline.yml@templates
+  parameters:
+    appName: 'martech-oneway-reports-bff'
+    artifactName: 'martech-oneway-reports-bff'
+    automaticReviewerApplicationType: 'microservice'
+
+    dockerBuild: true
+    dockerProjectPath: '$(Build.Repository.LocalPath)/$(Build.Repository.Name)'
+    dockerImageNames: ['martech-oneway-reports-bff']
+    dockerVersionMicroservice: '1.0.0'
+    dockerPublish: true
+    dockerPublishCondition: or(
+      startsWith(variables['Build.SourceBranch'], 'refs/heads/release/'),
+      eq(variables['Build.SourceBranch'], 'refs/heads/master')
+      )
+    dockerVersionValidation: git
+    dockerBuildCache: false
+
+    downloadVault: false
+
+    jsUnitTestCommand: 'run test:cov'
+    jsBuildCommand: 'run build'
+    jsLintCommand: 'lint'
+    jsLintBreaker: true
+
+    language: js
+    buildCache: false
+
+    sonarConfigFile: '$(Build.Repository.Name)/sonar-project.properties'
+    sonarBuildBreaker: false
+    sonarScan: false
+
+    snykTargetFile: 'package.json'
+
+    environments:
+      - uat
+      - prod
+
+    envConfig:
+      uat:
+        condition: and(succeeded(),
+          startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')
+          )
+        envName: '$(EnvironmentUAT)'
+        dependsOn:
+          - MASTER_CD
+        repositoryKey: uat_bees_microservices
+      prod:
+        condition: and(succeeded(),
+          eq(variables['Build.SourceBranch'], 'refs/heads/master')
+          )
+        envName: 'martech-oneway-reports-bff-prod'
+        dependsOn:
+          - MASTER_CD
+        repositoryKey: prod_bees_microservices

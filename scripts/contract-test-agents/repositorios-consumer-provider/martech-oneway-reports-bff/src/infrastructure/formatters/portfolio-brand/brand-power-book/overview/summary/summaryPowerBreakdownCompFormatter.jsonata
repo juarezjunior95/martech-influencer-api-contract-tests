@@ -1,0 +1,142 @@
+/**
+ * 🔢 SUMMARY POWER BREAKDOWN COMP FORMATTER
+ * 🎯 Component: Multi-header Table (ABI + Competitor brands)
+ * 📍 Used on: BrandPowerBook > Overview > Summary > Brand Breakdown (Comp view)
+ * 🔄 Input: summary-power_by-brand-breakdown data
+ * 📤 Output: Nested header + pivoted rows (ABI brands, separator, COMP brands)
+ * 🔧 Helpers: formatDateToQuarter, formatLyQuarter
+ */
+(
+  $ds := $keys($.datasources)[0];
+  $data := $lookup($.datasources, $ds);
+
+  $config := {
+    "variation": { "unit_measure": "pp" },
+    "direction": { "up": "#49764B", "down": "#A20A0A" },
+    "legend": {
+      "abi": "#EDCD20",
+      "comp": "#97ADBB"
+    },
+    "kpis": [
+      { "name": "power", "prefix": "brand_power", "title": "Brand Power", "fixedMax": 100 },
+      { "name": "meaningful", "prefix": "meaning", "title": "Meaning" },
+      { "name": "difference", "prefix": "difference", "title": "Difference" },
+      { "name": "salience", "prefix": "salience", "title": "Salience" }
+    ],
+    "labels": {
+      "competitor_separator": "Competitor Brands"
+    }
+  };
+
+  $count($data) = 0
+    ? { "empty": true }
+    : (
+        $abiData := $filter($data, function($row) { $uppercase($row.level_1) = "ABI" });
+        $compData := $filter($data, function($row) { $uppercase($row.level_1) = "COMP" });
+
+        $abiBrands := $distinct($abiData.raw_brand);
+        $compBrands := $distinct($compData.raw_brand);
+
+        $acLabel := "AC - " & $formatDateToQuarter($data[0].dt_end);
+        $lyLabel := $formatLyQuarter($data[0].dt_end);
+
+        $maxForKpi := function($kpiName) {
+          $max($filter($abiData, function($row) { $row.kpi_name = $kpiName }).ac)
+        };
+
+        $header := $append(
+          [{ "title": "", "children": [{ "id": "id", "title": "" }] }],
+          $map($config.kpis, function($kpi) {
+            {
+              "title": $kpi.title,
+              "children": [
+                { "id": $kpi.prefix & "_ac", "title": $acLabel },
+                { "id": $kpi.prefix & "_ly", "title": $lyLabel }
+              ]
+            }
+          })
+        );
+
+        $buildLyCell := function($kpiRow, $isComp) {
+          $kpiRow.ac_vs_ly = 0
+            ? {
+                "variationDirection": $config.direction.down,
+                "value": $isComp ? "0pp" : 0
+              }
+            : {
+                "unitMeasure": $config.variation.unit_measure,
+                "variationDirection": $kpiRow.ac_vs_ly > 0 ? $config.direction.up : $config.direction.down,
+                "value": $kpiRow.ac_vs_ly
+              }
+        };
+
+        $buildBrandRow := function($brandName, $brandData, $isComp) {
+          (
+            $color := $isComp ? $config.legend.comp : $config.legend.abi;
+
+            $base := {
+              "id": { "value": $brandName },
+              "type": { "value": $isComp ? "competitor" : "abi" }
+            };
+
+            $kpiCells := $merge(
+              $map($config.kpis, function($kpi) {
+                (
+                  $kpiRow := $filter($brandData, function($row) { $row.kpi_name = $kpi.name })[0];
+                  $maxVal := $exists($kpi.fixedMax) ? $kpi.fixedMax : $maxForKpi($kpi.name);
+                  {
+                    ($kpi.prefix & "_ac"): {
+                      "chartData": {
+                        "data": [$kpiRow.ac],
+                        "backgroundColor": [$color],
+                        "max": $maxVal
+                      }
+                    },
+                    ($kpi.prefix & "_ly"): $buildLyCell($kpiRow, $isComp)
+                  }
+                )
+              })
+            );
+
+            $merge([$base, $kpiCells])
+          )
+        };
+
+        $separatorRow := $merge([
+          {
+            "type": { "value": "competitor" },
+            "id": { "value": $config.labels.competitor_separator }
+          },
+          $merge(
+            $map($config.kpis, function($kpi) {
+              { ($kpi.prefix & "_ac"): {}, ($kpi.prefix & "_ly"): {} }
+            })
+          )
+        ]);
+
+        $abiRows := $map($abiBrands, function($brandName) {
+          (
+            $brandData := $filter($abiData, function($row) { $row.raw_brand = $brandName });
+            $buildBrandRow($brandName, $brandData, false)
+          )
+        });
+
+        $compRows := $count($compBrands) > 0
+          ? $map($compBrands, function($brandName) {
+              (
+                $brandData := $filter($compData, function($row) { $row.raw_brand = $brandName });
+                $buildBrandRow($brandName, $brandData, true)
+              )
+            })
+          : [];
+
+        $allRows := $count($compBrands) > 0
+          ? $append($append($abiRows, $separatorRow), $compRows)
+          : $abiRows;
+
+        {
+          "header": $header,
+          "rows": [[$allRows]]
+        }
+      )
+)

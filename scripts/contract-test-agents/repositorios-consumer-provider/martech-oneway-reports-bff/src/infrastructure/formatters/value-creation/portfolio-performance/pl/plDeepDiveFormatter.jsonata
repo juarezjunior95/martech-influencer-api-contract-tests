@@ -1,0 +1,237 @@
+/**
+ * Component: P&L Deep Dive table
+ * Used on: Value Creation > Portfolio Performance > P&L
+ * Input: $.components[0].data.datasources | $.datasources | data-service payload { name, data }
+ * Output: { header, rows } | { empty: true }
+ */
+(
+  /* ===============================
+     Datasource setup
+     =============================== */
+  $dsKey := "value-creation_portfolio-performance_pl_deep-dive";
+  $rootDatasources := $exists($.components) and $count($.components) > 0
+    ? $.components[0].data.datasources
+    : ($exists($.datasources) ? $.datasources : $);
+
+  $ensureArray := function($value) {
+    $type($value) = "array"
+      ? $value
+      : ($exists($value) and $value != null ? [$value] : [])
+  };
+
+  $mappedDatasource := $type($rootDatasources) = "object" ? $lookup($rootDatasources, $dsKey) : undefined;
+  $rawDatasource := ($type($mappedDatasource) = "array" or ($exists($mappedDatasource) and $mappedDatasource != null))
+    ? $mappedDatasource
+    : (
+        $type($rootDatasources) = "object" and $rootDatasources.name = $dsKey
+          ? $rootDatasources
+          : $filter($ensureArray($rootDatasources), function($source) { $source.name = $dsKey })[0]
+      );
+
+  $data := $type($rawDatasource) = "array"
+    ? $rawDatasource
+    : (
+        $exists($rawDatasource.data) and $rawDatasource.data != null
+          ? $ensureArray($rawDatasource.data)
+          : (
+              $exists($rawDatasource.rows) and $rawDatasource.rows != null
+                ? $ensureArray($rawDatasource.rows)
+                : []
+            )
+      );
+
+  /* ===============================
+     Base dates and global variables
+     =============================== */
+  $yearFromValue := function($value) {
+    $type($value) = "number"
+      ? $value
+      : (
+          $type($value) = "string" and $value != ""
+            ? $number($substring($value, 0, 4))
+            : undefined
+        )
+  };
+
+  $yearCandidates := [
+    $.config.currentYear,
+    $.config.current_year,
+    $.filters.dt_end,
+    $.filters.dt_ini,
+    $.query.dt_end,
+    $.query.dt_ini,
+    $data[$exists(dt_end) and dt_end != null][0].dt_end,
+    $data[$exists(dt_ini) and dt_ini != null][0].dt_ini,
+    $now()
+  ];
+  $validYears := $filter(
+    $map($yearCandidates, function($candidate) { $yearFromValue($candidate) }),
+    function($year) { $type($year) = "number" }
+  );
+  $yearNum := $validYears[0];
+  $lastYear := $yearNum - 1;
+  $group1 := ["Total Volume"];
+  $group2 := ["S&M"];
+  $group3 := ["VILC"];
+  $group4 := ["NR/hl", "VIC/hl", "VLC/hl", "MACO/hl", "CORES/hl", "VILC/hl"];
+  $group5 := ["MACO Margin", "S&M as % of NR", "CORES Margin", "S&M as % of MACO"];
+  $ppKpis := ["MACO Margin", "S&M as % of NR", "CORES Margin", "S&M as % of MACO"];
+  $exciseLabel := "Excise duty " & "$" & " eco taxes";
+
+  $kpiRowsByTitle := $reduce(
+    $data,
+    function($accumulator, $kpiRow) {
+      $exists($kpiRow.kpi_title)
+        ? $merge([$accumulator, { ($string($kpiRow.kpi_title)): $kpiRow }])
+        : $accumulator
+    },
+    {}
+  );
+
+  /* ===============================
+     Readable KPI children map
+     =============================== */
+  $getKpiChildren := function($kpiTitle) {
+    (
+      $kpiMap := {
+        "Total Volume": ["Gross Turnover", $exciseLabel, "Discounts", "NET REVENUE", "MACO", "CORES"],
+        "NET REVENUE": ["VIC", "VLC"],
+        "MACO": ["Marketing Costs", "Sales Costs"]
+      };
+      $children := $lookup($kpiMap, $kpiTitle);
+      $exists($children) ? $children : []
+    )
+  };
+  /* ===============================
+     KPI group filtering
+     =============================== */
+  $getGroup := function($groupArray) {
+    $filter(
+      $data,
+      function($kpiRow) {
+        (
+          $kpiTitle := $string($kpiRow.kpi_title);
+          $exists($kpiRow.kpi_title) and $count($filter($groupArray, function($groupItem) { $groupItem = $kpiTitle })) > 0
+        )
+      }
+    )
+  };
+  /* ===============================
+     KPI to rows mapping
+     =============================== */
+  $mapKpi := function($kpi) {
+    (
+      $kpiTitle := $string($kpi.kpi_title);
+      $childrenKpis := $getKpiChildren($kpiTitle);
+      $hasChildren := $count($childrenKpis) > 0;
+      $isPp := $count($filter($ppKpis, function($ppKpi) { $ppKpi = $kpiTitle })) > 0;
+      $growthUnit := $isPp ? "pp" : "%";
+      $vsMioUnit := $isPp ? "%" : undefined;
+      $baseRow := {
+        "kpi_mio_khl": { "value": $kpiTitle, "unitMeasure": $exists($kpi.unitMeasure) and $kpi.unitMeasure != null ? $string($kpi.unitMeasure) : undefined },
+        "organic_growth_vs_bu_mio": { "value": $kpi.og_vs_bu, "unitMeasure": $vsMioUnit },
+        "organic_growth_vs_bu": { "value": $kpi.og_vs_bu_comp, "unitMeasure": $growthUnit, "variationDirection": $kpi.og_vs_bu_comp_direction },
+        "organic_growth_vs_ly_mio": { "value": $kpi.og_vs_ly, "unitMeasure": $vsMioUnit },
+        "organic_growth_vs_ly": { "value": $kpi.og_vs_ly_comp, "unitMeasure": $growthUnit, "variationDirection": $kpi.og_vs_ly_comp_direction },
+        "py_ac": { "value": $kpi.ly, "unitMeasure": $vsMioUnit },
+        "cy_bu": { "value": $kpi.bu, "unitMeasure": $vsMioUnit },
+        "cy_ac": { "value": $kpi.ac, "unitMeasure": $vsMioUnit }
+      };
+      $hasChildren
+        ? (
+          $childrenRows := $filter(
+            $map(
+              $childrenKpis,
+              function($childKpiTitle) {
+                (
+                  $childKpi := $lookup($kpiRowsByTitle, $childKpiTitle);
+                  $exists($childKpi)
+                    ? $mapKpi($childKpi)
+                    : null
+                )
+              }
+            ),
+            function($row) { $exists($row) }
+          );
+          $flattenedChildren := $reduce($childrenRows, function($acc, $childRows) { $append($acc, $childRows) }, []);
+          $append([$baseRow], $flattenedChildren)
+        )
+        : [$baseRow]
+    )
+  };
+  /* ===============================
+     Final rows creation
+     =============================== */
+  $createGroupArray := function($groupArray) {
+    (
+      $groupKpis := $getGroup($groupArray);
+      $reduce($groupKpis, function($accumulator, $kpi) { $append($accumulator, $mapKpi($kpi)) }, [])
+    )
+  };
+  $createGroupArrayWithHeader := function(
+    $groupArray,
+    $headerRow
+  ) {
+    (
+      $rows := $createGroupArray($groupArray);
+      $append([$headerRow], $rows)
+    )
+  };
+  $kpisHlHeaderRow := {
+    "kpi_mio_khl": { "unitMeasure": "", "value": "KPI's/hL" },
+    "organic_growth_vs_bu_mio": { "value": "" },
+    "organic_growth_vs_bu": { "value": "" },
+    "organic_growth_vs_ly_mio": { "value": "" },
+    "organic_growth_vs_ly": { "value": "" },
+    "py_ac": { "value": "" },
+    "cy_bu": { "value": "" },
+    "cy_ac": { "value": "" }
+  };
+  $kpisHlHeaderOtherKpisRow := {
+    "kpi_mio_khl": { "unitMeasure": "", "value": "Other KPI'S" },
+    "organic_growth_vs_bu_mio": { "value": "" },
+    "organic_growth_vs_bu": { "value": "" },
+    "organic_growth_vs_ly_mio": { "value": "" },
+    "organic_growth_vs_ly": { "value": "" },
+    "py_ac": { "value": "" },
+    "cy_bu": { "value": "" },
+    "cy_ac": { "value": "" }
+  };
+  /* ===============================
+     Final output
+     =============================== */
+  $count($data) = 0
+    ? { "empty": true }
+    : {
+      "header": [
+        {
+          "title": "KPI",
+          "children": [{ "id": "kpi_mio_khl", "title": "[$Mio] and [k hl]" }]
+        },
+        {
+          "title": "Organic Growth",
+          "children": [
+            { "id": "organic_growth_vs_bu_mio", "title": "vs BU" },
+            { "id": "organic_growth_vs_bu", "title": "vs BU [%]" },
+            { "id": "organic_growth_vs_ly_mio", "title": "vs LY" },
+            { "id": "organic_growth_vs_ly", "title": "vs LY [%]" }
+          ]
+        },
+        {
+          "title": "Period",
+          "children": [
+            { "id": "py_ac", "title": $lastYear & " AC YTD" },
+            { "id": "cy_bu", "title": $yearNum & " BU YTD" },
+            { "id": "cy_ac", "title": $yearNum & " AC YTD" }
+          ]
+        }
+      ],
+      "rows": [
+        [$createGroupArray($group1)],
+        [$createGroupArray($group2)],
+        [$createGroupArray($group3)],
+        [$createGroupArrayWithHeader($group4, $kpisHlHeaderRow)],
+        [$createGroupArrayWithHeader($group5, $kpisHlHeaderOtherKpisRow)]
+      ]
+    }
+)

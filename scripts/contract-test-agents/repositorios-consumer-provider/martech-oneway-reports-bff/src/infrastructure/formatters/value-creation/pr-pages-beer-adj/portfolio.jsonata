@@ -1,0 +1,72 @@
+/* *
+ * 🔢 Table
+ * 🎯 Component: Portfolio Performance Table
+ * 📍 Used on: Volume Pages
+ * 🔄 Input: datasource
+ * 📤 Output: Table card interface */
+(
+  $ds := $keys($.datasources)[0];
+  $config := {
+    "direction": {
+      "up": "#007800",
+      "down": "#B91C1C"
+    },
+    "comparative_unit": "%",
+    "headers": [
+      {
+        "id": "portfolio",
+        "title": "Portfolio",
+        "subtitle": "vs LY"
+      },
+      {
+        "id": "mtd",
+        "title": "Month"
+      },
+      {
+        "id": "l3m",
+        "title": "L3M"
+      },
+      {
+        "id": "ytd",
+        "title": "YTD"
+      }
+    ]
+  };
+  $data := $.datasources.$lookup($ds);
+  $regularKeys := $distinct($data[segment != "Total"].segment);
+  $rowKeys := $count($data[segment = "Total"]) > 0
+    ? $append($regularKeys, "Total")
+    : $regularKeys;
+    $toCellData := function($data) { 
+        ($count($data) = 0 or $data.ac_vs_ly = "-") ? 
+        {"value": "-"} :
+        {
+            "value": $data.ac_vs_ly,
+            "unitMeasure": $config.comparative_unit,
+            "variationDirection": $lookup($config.direction, $data.variationDirectionVsLy)
+        }
+   };
+  $rows := $map(
+      $rowKeys,
+      function($rowKey) {
+          (
+            $ytdData := $data[segment=$rowKey and period="YTD"];
+            $l3mData := $data[segment=$rowKey and period="L3M"];
+            $mData := $data[segment=$rowKey and period="M"];
+            {
+                $config.headers[0].id: {
+                    "value": $rowKey
+                },
+                "ytd": $toCellData($ytdData),
+                "l3m": $toCellData($l3mData),
+                "mtd": $toCellData($mData)
+            }
+          )
+      }
+  );
+  /* Filter out null values */
+  $count($data) = 0 ? { "empty": true } : { 
+    "rows": [[ $rows ]],
+    "header": $config.headers
+  }
+)

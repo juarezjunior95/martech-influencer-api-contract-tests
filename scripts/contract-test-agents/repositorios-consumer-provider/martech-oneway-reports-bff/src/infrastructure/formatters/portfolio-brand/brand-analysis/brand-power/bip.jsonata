@@ -1,0 +1,198 @@
+/**
+ * BRAND ANALYSIS BRAND POWER BIP TABLE FORMATTER (BFF)
+ * Based on frontend formatter:
+ * - BipTableFormatter/bipTableFormatter.jsonata
+ */
+(
+  $componentDatasources :=
+    $exists(components) and $count(components) > 0 and $exists(components[0].data.datasources) and $type(components[0].data.datasources) = "object"
+      ? components[0].data.datasources
+      : {};
+  $rawDatasources :=
+    $count($keys($componentDatasources)) > 0
+      ? $componentDatasources
+      : ($exists(datasources) and $type(datasources) = "object" ? datasources : {});
+
+  $asArray := function($value) {
+    $type($value) = "array" ? $value : ($exists($value) ? [$value] : [])
+  };
+
+  $firstExistingField := function($item, $fields) {
+    (
+      $type($item) != "object"
+        ? undefined
+        : (
+          $fieldList := $asArray($fields);
+          $existingFields := $filter($fieldList, function($field) {
+            $type($field) = "string" and $exists($lookup($item, $field))
+          });
+          $count($existingFields) > 0 ? $lookup($item, $existingFields[0]) : undefined
+        )
+    )
+  };
+
+  $firstExistingValue := function($values) {
+    (
+      $existingValues := $filter($asArray($values), function($value) {
+        $exists($value)
+      });
+      $count($existingValues) > 0 ? $existingValues[0] : undefined
+    )
+  };
+
+  $firstNestedBrandImage := function($item) {
+    (
+      $brand := $exists($item.brand) and $type($item.brand) = "object"
+        ? $item.brand
+        : undefined;
+      $firstExistingValue([
+        $exists($brand.imageSquare) ? $brand.imageSquare : undefined,
+        $exists($brand.imageTable) ? $brand.imageTable : undefined
+      ])
+    )
+  };
+
+  $toNumber := function($value) {
+    $type($value) = "number"
+      ? $value
+      : (
+        $type($value) = "string" and $match($trim($value), /^[-+]?[0-9]*[.]?[0-9]+$/)
+          ? $number($trim($value))
+          : $value
+      )
+  };
+
+  $pickFirstValid := function($values) {
+    (
+      $list := $filter(
+        $asArray($values),
+        function($v) {(
+          $normalized := $lowercase($trim($string($v)));
+          $exists($v) and $normalized != "" and $normalized != "n/a"
+        )}
+      );
+
+      $count($list) > 0 ? $list[0] : undefined
+    )
+  };
+
+  $pickFirstBrandLabel := function($values) {
+    (
+      $list := $filter(
+        $asArray($values),
+        function($v) {(
+          $normalized := $lowercase($trim($string($v)));
+          $exists($v) and $normalized != "" and $normalized != "n/a" and $normalized != "all"
+        )}
+      );
+
+      $count($list) > 0 ? $list[0] : undefined
+    )
+  };
+
+  $normalizedSource := $asArray(
+    $lookup($rawDatasources, "portfolio-brand_brand-analysis_brand-power_bip_st")
+  );
+  $source := $normalizedSource;
+
+  $bip := $map($asArray($source), function($item) {
+    {
+      "question": $firstExistingField($item, ["level_4", "question"]),
+      "value": $toNumber($firstExistingField($item, ["value", "ac"])),
+      "comp_value": $toNumber($firstExistingField($item, ["comp_value", "ac_vs_ly"])),
+      "brand_ownership": $uppercase(
+        $string($firstExistingField($item, ["level_1", "brand_ownership"]))
+      ),
+      "brand_name": $firstExistingField($item, ["raw_brand", "brand_name"]),
+      "sub_brand": $firstExistingField($item, ["sub_brand"]),
+      "brand_image": $firstExistingValue([
+        $firstExistingField($item, ["brand_image"]),
+        $firstNestedBrandImage($item)
+      ])
+    }
+  });
+
+  $validBip := $filter($bip, function($item) {
+    $exists($item.question) and $trim($string($item.question)) != ""
+  });
+
+  $isEmpty := $count($validBip) = 0;
+  $isVersusCompetitor := $count($validBip[brand_ownership = "COMP"]) > 0;
+  $questions := $distinct($validBip.question);
+
+  $abiBrandImage := $pickFirstValid($validBip[brand_ownership = "ABI"].brand_image);
+  $abiBrandName := (
+    $abiBrandNameFromRaw := $pickFirstBrandLabel($validBip[brand_ownership = "ABI"].brand_name);
+    $exists($abiBrandNameFromRaw)
+      ? $abiBrandNameFromRaw
+      : $pickFirstBrandLabel($validBip[brand_ownership = "ABI"].sub_brand)
+  );
+  $compBrandName := (
+    $compBrandNameFromRaw := $pickFirstBrandLabel($validBip[brand_ownership = "COMP"].brand_name);
+    $exists($compBrandNameFromRaw)
+      ? $compBrandNameFromRaw
+      : $pickFirstBrandLabel($validBip[brand_ownership = "COMP"].sub_brand)
+  );
+
+  $bipChildren := function() {
+    [
+      {
+        "brandImage": true,
+        "id": "brand",
+        "title": $exists($abiBrandImage) ? $abiBrandImage : $abiBrandName
+      },
+      {
+        "id": "comp",
+        "title": $compBrandName,
+        "brandImg": true
+      }
+    ]
+  };
+
+  $header := [
+    {
+      "title": "Questions",
+      "icon": "kpi",
+      "id": "questions"
+    },
+    {
+      "title": "BIP",
+      "id": "bip",
+      "children": $isVersusCompetitor ? $bipChildren() : null
+    }
+  ];
+
+  $rowsAbiVsCompetitor := function() {
+    $map($questions, function($question) {
+      (
+        $item := $validBip[question = $question];
+        $compValue := $item[brand_ownership = "COMP"].comp_value;
+        $abiValue := $item[brand_ownership = "ABI"].value;
+
+        {
+          "questions": { "value": $question },
+          "comp": { "value": $exists($compValue) ? $compValue : "-" },
+          "brand": { "value": $exists($abiValue) ? $abiValue : "-" }
+        }
+      )
+    })
+  };
+
+  $rowsAbi := function() {
+    $map($validBip, function($item) {
+      {
+        "bip": {
+          "value": $item.value
+        },
+        "questions": { "value": $item.question }
+      }
+    })
+  };
+
+  $isEmpty
+    ? { "empty": true }
+    : {
+      "header": $header,
+      "rows": [[$isVersusCompetitor ? $rowsAbiVsCompetitor() : $rowsAbi()]]
+    }
+)

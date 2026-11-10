@@ -1,0 +1,1 @@
+export { HowWeDoItCard } from './HowWeDoItCard';

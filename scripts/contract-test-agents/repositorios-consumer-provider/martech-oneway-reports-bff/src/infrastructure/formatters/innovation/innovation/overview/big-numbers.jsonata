@@ -1,0 +1,112 @@
+/* *
+ * 🔢 INNOVATION BIG NUMBERS FORMATTER
+ * 🎯 Component: Innovation Big Numbers
+ * 📍 Used on: Innovation > Innovation > Big Numbers
+ * 🔄 Input: innovation_innovation_overview_big-numbers data
+ * 📤 Output: InnovationBigNumbers interface */
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+  
+  $isYtd := function() {
+    $data[0].dt_end != $data[0].dt_ini
+  };
+
+  $config := {
+    "direction": { "up": "#007800", "down": "#B91C1C" },
+    "absolute_prefix": "#: ",
+    "cards": [
+      {
+        "id": "volume",
+        "has_deep_dive": true,
+        "kpi_name": "innovation_volume",
+        "data_configs": [
+          { "big_number": "ac_vs_ly", "measure": "%", "secondary_info": "ac", "comparison": "comp_ac_vs_ly_direction", "comp_value": "YTD VS LY" },
+          { "big_number": "le_vs_ly", "measure": "%", "secondary_info": "le", "comparison": "comp_le_vs_ly_direction", "comp_value": "LE VS LY" }
+        ]
+      },
+      {
+        "id": "volumeMix",
+        "has_deep_dive": false,
+        "kpi_name": "innovation_volume_mix",
+        "data_configs": [
+          { "big_number": "ac_vs_ly", "measure": "pp", "secondary_info": "ac", "comparison": "comp_ac_vs_ly_direction", "comp_value": "YTD VS LY", "secondary_info_measure": "secondary_measure" }
+        ]
+      },
+      {
+        "id": "nr",
+        "kpi_name": "innovation_nr",
+        "has_deep_dive": true,
+        "data_configs": [
+          { "big_number": "ac_vs_ly", "measure": "%", "secondary_info": "ac", "comparison": "comp_ac_vs_ly_direction", "comp_value": "YTD VS LY" },
+          { "big_number": "le_vs_ly", "measure": "%", "secondary_info": "le", "comparison": "comp_le_vs_ly_direction", "comp_value": "LE VS LY" }
+        ]
+      },
+      {
+        "id": "maco",
+        "kpi_name": "innovation_maco",
+        "has_deep_dive": true,
+        "data_configs": [
+          { "big_number": "ac_vs_ly", "measure": "%", "secondary_info": "ac", "comparison": "comp_ac_vs_ly_direction", "comp_value": "YTD VS LY" },
+          { "big_number": "le_vs_ly", "measure": "%", "secondary_info": "le", "comparison": "comp_le_vs_ly_direction", "comp_value": "LE VS LY" }
+        ]
+      }
+    ]
+  };
+
+
+ 
+
+
+
+    $map(
+      $config.cards,
+      function($card) {
+        (
+          $cardData := $data[kpi_name = $card.kpi_name][0];
+          $dataArray := $count($cardData) < 1 ?
+           [] : 
+           $map(
+            $card.data_configs,
+            function($dataConfig) {
+              (
+                $bigNumberDirection := $lookup($cardData, $dataConfig.comparison);
+                $secondaryInfoVal := $lookup($cardData , $dataConfig.secondary_info);
+                $bigNumberVal := $lookup($cardData, $dataConfig.big_number);
+                $secondaryMeasure := $lookup($cardData , $dataConfig.secondary_info_measure);
+                $secondaryInfoMeasure := 
+                  $exists($dataConfig.secondary_info_measure) and $secondaryMeasure != null ?
+                    " [ " & $secondaryMeasure & " ]"
+                    : undefined;
+
+                {
+                  "bigNumber": {
+                    "value": $formatValue($bigNumberVal),
+                    "measure": $cardData.measure,
+                    "color": $lookup($config.direction, $bigNumberDirection)
+                  },
+                  "secondaryInfo": { 
+                    "value": $config.absolute_prefix & $formatValue($secondaryInfoVal),
+                    "measure":  $secondaryInfoMeasure 
+                  },
+                  "comparison": { "label": $cardData.lyMonthLabel, "value": $dataConfig.comp_value }
+                }
+              )
+            }
+          );
+
+          $periodSuffix := $isYtd() ? " YTD" : " MTD";
+          $period := $exists($cardData.refreshMonthLabel) and $cardData.refreshMonthLabel != null and $cardData.refreshMonthLabel != "" ?
+            $cardData.refreshMonthLabel & $periodSuffix
+            : undefined;
+
+          { 
+            "id": $card.id, 
+            "period": $period, 
+            "hasDeepDive": $card.has_deep_dive,
+            "data": [$dataArray] 
+          }
+        )
+      }
+    )
+)

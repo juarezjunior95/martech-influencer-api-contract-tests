@@ -1,0 +1,100 @@
+(
+  /**
+   * 🎯 Component: Campaigns QWOA Ranking Chart (by brand or country)
+   * 📍 Used on: Resource Allocation Media > Overview
+   * 🔄 Input: connections-and-creativity_resource-allocation-media_overview_unified-ranking
+   * 📤 Output: campaigns { owr_resource-allocation_overview_ranking-chart_campaigns: { datasets, labels } }
+   * 🔧 Config: chart_key, colors, segments, country_map, campaigns
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "chart_key": "owr_resource-allocation_overview_ranking-chart_campaigns",
+    "colors": {
+      "chart": ["#E5B611", "#C2346A", "#2F74AA", "#4E579F"],
+      "background": "#F0D59E"
+    },
+    "campaigns": {
+      "dataset_label": "Campaigns",
+      "dataset_background_color": "#F0D59E",
+      "unit_of_measure": "%"
+    }
+  };
+
+  $segments := $getSegmentColors();
+  $countryMap := $getCountryMap();
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $dsKey := $keys($datasources)[0];
+  $ds := $lookup($datasources, $dsKey);
+  $rawData := $exists($ds.data) ? $ds.data : ($exists($ds) and $type($ds) = "array" ? $ds : []);
+  $isEmpty := $count($rawData) = 0;
+
+  $segmentOrder := $keys($segments);
+  
+  $isCountryView := $count($rawData[raw_brand = "N/A"]) > 0;
+  $entry := $isEmpty
+    ? []
+    : (
+      $isCountryView
+        ? $rawData
+        : (          
+          $reduce($segmentOrder, function($acc, $segment) {(
+            $filtered := $rawData[segment = $segment];
+            $append($acc, $filtered)
+          )}, [])
+        )
+    );
+  $entrySorted := $count($entry) > 0
+    ? $sort($entry, function($a, $b) { $a.ac < $b.ac })
+    : [];
+  $dataValues := $ensureArray($entrySorted.ac);
+  $maxValue := $max($dataValues);
+  $suggestedMax := $maxValue >= 100 ? 100 : $ceil($maxValue);
+  $formattedValues := $ensureArray($map($entrySorted, function($row) {
+    (
+      $fv := $formatValue($row.ac);
+      $fv != "-" ? $fv & $config.campaigns.unit_of_measure : ""
+    )
+  }));
+
+  {
+    "campaigns": $isEmpty
+      ? { "empty": true }
+      : {
+          ($config.chart_key): {
+            "datasets": [
+              {
+                "type": "bar",
+                "label": $config.campaigns.dataset_label,
+                "data": $dataValues,
+                "backgroundColor": [$config.campaigns.dataset_background_color],
+                "baseChartColor": $isCountryView
+                  ? null
+                  : $ensureArray($entrySorted.($lookup($segments, segment) ?: $segments.Megabrands)),
+                "formattedData": $formattedValues
+              }
+            ],
+            "formattedData": [[$map($entrySorted, function($row) {
+              (
+                $fv := $formatValue($row.ac);
+                $fv != "-" ? $fv & $config.campaigns.unit_of_measure : ""
+              )
+            })]],
+            "labels": $ensureArray(
+              $map($entrySorted, function($v) {
+                $v.raw_brand = "N/A"
+                  ? ($lookup($countryMap, $v.country_iso_code_3) ?: $v.country_iso_code_3)
+                  : $v.raw_brand
+              })
+            ),
+            "icons": $ensureArray(
+              $entrySorted.(global_brands = "Global Brand" ? "world" : "")
+            ),
+            "suggestedMax": $suggestedMax,
+            "hasPercentage": true
+          }
+        }
+  }
+)

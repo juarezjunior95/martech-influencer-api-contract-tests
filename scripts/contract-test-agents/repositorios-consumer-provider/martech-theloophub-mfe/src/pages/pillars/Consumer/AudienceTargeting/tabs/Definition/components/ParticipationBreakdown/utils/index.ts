@@ -1,0 +1,1 @@
+export { applyBrandColumnColors } from './applyBrandColumnColors';

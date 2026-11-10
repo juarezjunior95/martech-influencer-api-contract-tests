@@ -1,0 +1,1 @@
+export { getPillarIdByName } from './getPillarIdByName';

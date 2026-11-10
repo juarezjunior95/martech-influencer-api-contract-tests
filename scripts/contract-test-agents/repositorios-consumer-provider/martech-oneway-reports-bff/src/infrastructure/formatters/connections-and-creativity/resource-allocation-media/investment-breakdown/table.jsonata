@@ -1,0 +1,292 @@
+(
+  /**
+   * 🎯 Component: Investment Breakdown Table (by portfolio & brand)
+   * 📍 Used on: Resource Allocation Media > Investment Breakdown
+   * 🔄 Input: investment-breakdown_media-full-year-kpis, investment-breakdown_volume-kpi, investment-breakdown_media-ytd-kpis
+   * 📤 Output: investment_breakdown { header, rows } | { empty: true }
+   * 🔧 Config: percent_unit, segment_order, investment_color, investment_thresholds
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "percent_unit": "%",
+    "segment_order": ["Megabrands", "Expansion", "Sustain", "Tail", "Total"],
+    "investment_color": { "high": "#00810d", "medium": "#d1a33c", "low": "#a30a0a" },
+    "investment_thresholds": { "high": 5, "medium": 4 }
+  };
+
+  $datasources := $exists(datasources) and $type(datasources) = "object" ? datasources : {};
+  $allKeys := $keys($datasources);
+  $fyKey := $filter($allKeys, function($k) { $contains($k, "full-year") })[0];
+  $volumeKey := $filter($allKeys, function($k) { $contains($k, "volume") })[0];
+  $ytdKey := $filter($allKeys, function($k) { $contains($k, "ytd") })[0];
+
+  $dsFy := $exists($fyKey) ? ($lookup($datasources, $fyKey) ?: []) : [];
+  $dsVolume := $exists($volumeKey) ? ($lookup($datasources, $volumeKey) ?: []) : [];
+  $dsYtd := $exists($ytdKey) ? ($lookup($datasources, $ytdKey) ?: []) : [];
+
+  $getValue := function($val) { $exists($val) and $val != null ? $val : "-" };
+
+  $fyIndex := $reduce($dsFy, function($acc, $r) {
+    $merge([$acc, { ($r.segment & "|" & $r.raw_brand & "|" & $r.kpi_variation & "|" & $r.kpi_name): $r }])
+  }, {});
+  $ytdIndex := $reduce($dsYtd, function($acc, $r) {
+    $merge([$acc, { ($r.segment & "|" & $r.raw_brand & "|" & $r.kpi_variation & "|" & $r.kpi_name): $r }])
+  }, {});
+  $volumeIndex := $reduce($dsVolume, function($acc, $r) {
+    $merge([$acc, { ($r.segment & "|" & $r.raw_brand): $r }])
+  }, {});
+
+  $getFy := function($segment, $brand, $kpiVariation, $kpiName, $field) {
+    (
+      $row := $lookup($fyIndex, $segment & "|" & $brand & "|" & $kpiVariation & "|" & $kpiName);
+      $exists($row) ? $getValue($lookup($row, $field)) : "-"
+    )
+  };
+
+  $getYtd := function($segment, $brand, $kpiVariation, $kpiName, $field) {
+    (
+      $row := $lookup($ytdIndex, $segment & "|" & $brand & "|" & $kpiVariation & "|" & $kpiName);
+      $exists($row) ? $getValue($lookup($row, $field)) : "-"
+    )
+  };
+
+  $getVolume := function($segment, $brand, $field) {
+    (
+      $row := $lookup($volumeIndex, $segment & "|" & $brand);
+      $exists($row) ? $getValue($lookup($row, $field)) : "-"
+    )
+  };
+
+  $getInvestmentColor := function($val) {
+    $type($val) = "number"
+      ? ($val >= $config.investment_thresholds.high ? $config.investment_color.high : $val >= $config.investment_thresholds.medium ? $config.investment_color.medium : $config.investment_color.low)
+      : ""
+  };
+
+  $brandImageUrl := function($rawBrand, $image) {
+    $rawBrand = "Tail" or $rawBrand = "Total Market"
+      ? $rawBrand
+      : $image
+  };
+
+  $isEmpty := $count($dsVolume) = 0 and $count($dsFy) = 0 and $count($dsYtd) = 0;
+
+  /* ─── Per-section header subtitles ─── */
+  $volumeSubtitle := $count($dsVolume) > 0 ? $dsVolume[0].refreshMonthLabel : "";
+  $getYtdSubtitle := function($kpiVar) {
+    (
+      $filtered := $filter($dsYtd, function($r) { $r.kpi_variation = $kpiVar });
+      $count($filtered) > 0 ? $filtered[0].refreshMonthLabel : ""
+    )
+  };
+  $marketingSubtitle := $getYtdSubtitle("tt_mkt");
+  $nwmSubtitle := $getYtdSubtitle("non_working_money");
+  $mediaSubtitle := $getYtdSubtitle("media");
+  $sponsorshipSubtitle := $getYtdSubtitle("sponsorship_activation");
+
+  $header := [
+    { "id": "portfolio", "title": "Portfolio" },
+    { "id": "brands", "title": "Brands" },
+    {
+      "title": "Volume",
+      "subtitle": $volumeSubtitle,
+      "children": [
+        { "id": "volume_AC", "title": "AC" },
+        { "id": "volume_LY", "title": "vs LY" }
+      ]
+    },
+    {
+      "title": "Marketing Package",
+      "subtitle": $marketingSubtitle,
+      "children": [
+        { "id": "marketing_package_FY_BU", "title": "FY BU" },
+        { "id": "marketing_package_YTD_BU", "title": "YTD BU" },
+        { "id": "marketing_package_YTD_AC", "title": "YTD AC" },
+        { "id": "marketing_package_COM", "title": "%COM" }
+      ]
+    },
+    {
+      "title": "NWM",
+      "subtitle": $nwmSubtitle,
+      "children": [
+        { "id": "nwm_fy_bu", "title": "FY BU" },
+        { "id": "nwm_ytd_bu", "title": "YTD BU" },
+        { "id": "nwm_ytd_ac_investment", "title": "YTD AC" },
+        { "id": "nwm_ytd_ac", "title": "YTD AC" },
+        { "id": "nwm_ytd_ac_2", "title": "YTD AC" }
+      ]
+    },
+    {
+      "title": "Media",
+      "subtitle": $mediaSubtitle,
+      "children": [
+        { "id": "media_fy_bu_qwoa", "title": "FY BU" },
+        { "id": "media_ytd_bu_qwoa", "title": "YTD BU" },
+        { "id": "media_ytd_ac", "title": "YTD AC" },
+        { "id": "media_fy_bu_investment", "title": "FY BU" },
+        { "id": "media_ytd_bu_investment", "title": "YTD BU" },
+        { "id": "media_ytd_ac_investment", "title": "YTD AC" },
+        { "id": "media_ytd_ac_mkt", "title": "YTD AC" }
+      ]
+    },
+    {
+      "title": "Sponsorship & Activation",
+      "subtitle": $sponsorshipSubtitle,
+      "children": [
+        { "id": "sponsorship_fy_bu", "title": "FY BU" },
+        { "id": "sponsorship_ytd_bu", "title": "YTD BU" },
+        { "id": "sponsorship_ytd_ac_investment", "title": "YTD AC" },
+        { "id": "sponsorship_ytd_ac", "title": "YTD AC" }
+      ]
+    }
+  ];
+
+  $rowHeader := [
+    [
+      {
+        "portfolio": { "mergeCol": 2, "value": "", "colSpan": 2 },
+        "brands": { "hasImage": false, "imageName": "", "value": " " },
+        "volume_AC": { "value": "k hl" },
+        "volume_LY": { "variationDirection": "", "unitMeasure": "", "value": "%" },
+        "marketing_package_FY_BU": { "mergeCol": 4, "value": "Investment [Mio USD]", "colSpan": 4 },
+        "marketing_package_YTD_BU": [],
+        "marketing_package_YTD_AC": [],
+        "marketing_package_COM": { "unitMeasure": "", "value": "" },
+        "nwm_fy_bu": { "mergeCol": 3, "borderGroupRightWhite": true, "value": "Investment [Mio USD]", "colSpan": 3 },
+        "nwm_ytd_bu": [],
+        "nwm_ytd_ac_investment": [],
+        "nwm_ytd_ac": { "borderGroupRightWhite": true, "value": "% MKT" },
+        "nwm_ytd_ac_2": { "value": "M/P ratio [#]" },
+        "media_fy_bu_qwoa": { "mergeCol": 3, "borderGroupRightWhite": true, "value": "QWOA [#]", "colSpan": 3 },
+        "media_ytd_bu_qwoa": [],
+        "media_ytd_ac": [],
+        "media_fy_bu_investment": { "borderGroupRightWhite": true, "mergeCol": 3, "value": "Investment [Mio USD]", "colSpan": 3 },
+        "media_ytd_bu_investment": [],
+        "media_ytd_ac_investment": [],
+        "media_ytd_ac_mkt": { "unitMeasure": "", "value": "% MKT" },
+        "sponsorship_fy_bu": { "mergeCol": 3, "value": "Investment [Mio USD]", "colSpan": 3 },
+        "sponsorship_ytd_bu": [],
+        "sponsorship_ytd_ac_investment": [],
+        "sponsorship_ytd_ac": { "borderTopRightRadius": false, "value": "% MKT" }
+      }
+    ]
+  ];
+
+  $pairsOrdered := $reduce($config.segment_order, function($acc, $seg) {
+    (
+      $brandRows := $filter($dsVolume, function($r) { $r.segment = $seg });
+      $sorted := $brandRows^(rank);
+      $append($acc, $map($sorted, function($r) { { "segment": $seg, "raw_brand": $r.raw_brand, "brand_image":  $r.brand.imageTable} }))
+    )
+  }, []);
+
+  $buildRow := function($pair) {
+    (
+      $seg := $pair.segment;
+      $brand := $pair.raw_brand;
+
+      $image:= $pair.brand_image;
+
+    $fyTtMktBu := $getFy($seg, $brand, "tt_mkt", "media", "bu");
+    $ytdTtMktBu := $getYtd($seg, $brand, "tt_mkt", "media", "bu");
+    $ytdTtMktAc := $getYtd($seg, $brand, "tt_mkt", "media", "ac");
+    $fyTtMktAcVsBu := $getFy($seg, $brand, "tt_mkt", "media", "ac_vs_bu");
+
+    $nwmFyBu := $getFy($seg, $brand, "non_working_money", "media", "bu");
+    $nwmYtdBu := $getYtd($seg, $brand, "non_working_money", "media", "bu");
+    $nwmYtdAc := $getYtd($seg, $brand, "non_working_money", "media", "ac");
+    $nwmYtdWeight := $getYtd($seg, $brand, "non_working_money", "media_weight", "ac");
+    $nwmYtdMediaProd := $getYtd($seg, $brand, "media_prod", "media_weight", "ac");
+
+    $qwoaFyAc := $getFy($seg, $brand, "qwoa", "media", "ac");
+    $qwoaYtdBu := $getYtd($seg, $brand, "qwoa", "media", "bu");
+    $qwoaYtdAc := $getYtd($seg, $brand, "qwoa", "media", "ac");
+
+    $mediaFyBu := $getFy($seg, $brand, "media", "media", "bu");
+    $mediaYtdBu := $getYtd($seg, $brand, "media", "media", "bu");
+    $mediaYtdAc := $getYtd($seg, $brand, "media", "media", "ac");
+    $mediaYtdWeight := $getYtd($seg, $brand, "media", "media_weight", "ac");
+
+    $sponFyBu := $getFy($seg, $brand, "sponsorship_activation", "media", "bu");
+    $sponYtdBu := $getYtd($seg, $brand, "sponsorship_activation", "media", "bu");
+    $sponYtdAc := $getYtd($seg, $brand, "sponsorship_activation", "media", "ac");
+    $sponYtdWeight := $getYtd($seg, $brand, "sponsorship_activation", "media_weight", "ac");
+
+    $volAc := $getVolume($seg, $brand, "ac");
+    $volVsLy := $getVolume($seg, $brand, "ac_vs_ly");
+    $volDirection := $getVolume($seg, $brand, "variationDirectionVsLy");
+
+    {
+      "portfolio": { "value": $seg },
+      "brands": {
+        "hasImage": $brand != "Tail" and $brand != "Total Market",
+        "imageName": $brand,
+        "value": $brandImageUrl($brand, $image),
+        "imgName": $brand
+      },
+      "volume_AC": { "value": $volAc },
+      "volume_LY": {
+        "variationDirection": $volDirection,
+        "unitMeasure": $type($volVsLy) = "number" ? $config.percent_unit : "",
+        "value": $volVsLy
+      },
+      "marketing_package_FY_BU": { "value": $fyTtMktBu, "variationDirection": $getInvestmentColor($fyTtMktBu) },
+      "marketing_package_YTD_BU": { "value": $ytdTtMktBu, "variationDirection": $getInvestmentColor($ytdTtMktBu) },
+      "marketing_package_YTD_AC": { "value": $ytdTtMktAc, "variationDirection": $getInvestmentColor($ytdTtMktAc) },
+      "marketing_package_COM": {
+        "unitMeasure": $type($fyTtMktAcVsBu) = "number" ? $config.percent_unit : "",
+        "value": $fyTtMktAcVsBu,
+        "variationDirection": $fyTtMktAcVsBu
+      },
+      "nwm_fy_bu": { "value": $nwmFyBu },
+      "nwm_ytd_bu": { "value": $nwmYtdBu },
+      "nwm_ytd_ac_investment": { "value": $nwmYtdAc },
+      "nwm_ytd_ac": {
+        "value": $nwmYtdWeight,
+        "unitMeasure": $type($nwmYtdAc) = "number" ? $config.percent_unit : ""
+      },
+      "nwm_ytd_ac_2": { "value": $nwmYtdMediaProd },
+      "media_fy_bu_qwoa": { "value": $qwoaFyAc },
+      "media_ytd_bu_qwoa": { "value": $qwoaYtdBu },
+      "media_ytd_ac": { "value": $qwoaYtdAc },
+      "media_fy_bu_investment": { "value": $mediaFyBu },
+      "media_ytd_bu_investment": { "value": $mediaYtdBu },
+      "media_ytd_ac_investment": { "value": $mediaYtdAc },
+      "media_ytd_ac_mkt": {
+        "value": $mediaYtdWeight,
+        "unitMeasure": $type($mediaYtdWeight) = "number" ? $config.percent_unit : ""
+      },
+      "sponsorship_fy_bu": { "value": $sponFyBu },
+      "sponsorship_ytd_bu": { "value": $sponYtdBu },
+      "sponsorship_ytd_ac_investment": { "value": $sponYtdAc },
+      "sponsorship_ytd_ac": {
+        "value": $sponYtdWeight,
+        "unitMeasure": $type($sponYtdWeight) = "number" ? $config.percent_unit : ""
+      }
+    }
+    )
+  };
+
+  $dataRowsBySegment := $map($config.segment_order, function($seg) {
+    $filter($pairsOrdered, function($p) { $p.segment = $seg }) ~> $map($buildRow)
+  });
+
+  $ensureRowArray := function($row) {
+    ($type($row) = "array") ? $row : [ $row ]
+  };
+
+  $allRows := $append(
+    $rowHeader,
+    $map($dataRowsBySegment, function($segRows) { $ensureRowArray($segRows) })
+  );
+
+  $isEmpty
+    ? { "investment_breakdown": { "empty": true } }
+    : {
+        "investment_breakdown": {
+          "header": $header,
+          "rows": $allRows
+        }
+      }
+)

@@ -1,0 +1,75 @@
+/* 🔢 Target Audiences Big Number Formatter
+ * 🎯 Component: Participation Index (Core Audience vs Total)
+ * 📍 Used on: Consumer Home
+ * 🔄 Input: consumer_home_target-audiences data
+ * 📤 Output: BigNumberData */
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+
+  $dataArray := $type($data) = "array" ? $data : $exists($data) ? [$data] : [];
+
+  /* The datasource returns an array with a single object */
+  $item := $dataArray[0];
+
+  /* Extract quarter from dt_end month */
+  $month := $number($substring($item.dt_end, 5, 2));
+  $quarter := $month <= 3 ? "Q1" : $month <= 6 ? "Q2" : $month <= 9 ? "Q3" : "Q4";
+  $year := $substring($item.dt_end, 2, 2);
+  $period := $quarter & "'" & $year & " - R12M";
+
+  /* Format number with 1 decimal place */
+  $formatNumber := function($value) {(
+    $exists($value) and $type($value) = "number"
+      ? (
+          $r := $round($value, 1);
+          $r = $floor($r) ? $string($r) & ".0" : $string($r)
+        )
+      : "-"
+  )};
+
+  /* Determine trend: negative if value < 0, positive otherwise */
+  $getTrend := function($value) {(
+    $value < 0 ? "negative" : "positive"
+  )};
+
+  /* Format comparison.value from dt_ini as "Mon'YY" */
+  $monthNames := ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  $iniMonth := $number($substring($item.dt_ini, 5, 2));
+  $iniMonthName := $monthNames[$iniMonth - 1];
+  $iniYear := $substring($item.dt_ini, 2, 2);
+  $compValue := $iniMonthName & "'" & $iniYear;
+
+  /* Build bigNumberData from the single item */
+  $bigNumberData := [
+    {
+      "bigNumber": {
+        "value": $formatNumber($item.core_audience_vs_total),
+        "measure": "",
+        "trend": $getTrend($item.core_audience_vs_total)
+      },
+      "comparison": {
+        "label": "vs",
+        "value": $compValue
+      },
+      "secondaryInfo": {
+        "label": "",
+        "value": ""
+      }
+    }
+  ];
+
+  /* Return final BigNumberData structure */
+  $hasItem := $exists($item);
+  $hasItem ? {
+    "title": "Participation index",
+    "description": "Core Audience vs Total",
+    "period": $period,
+    "bigNumberData": $bigNumberData
+  } : {
+    "title": "Participation index",
+    "description": "",
+    "period": "",
+    "bigNumberData": []
+  }
+)

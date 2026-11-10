@@ -1,0 +1,114 @@
+abb13f89020394aa3a246a10eea5e5fc
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.encodeInfo = encodeInfo;
+var _micromarkUtilClassifyCharacter = require("micromark-util-classify-character");
+/**
+ * @import {EncodeSides} from '../types.js'
+ */
+
+/**
+ * Check whether to encode (as a character reference) the characters
+ * surrounding an attention run.
+ *
+ * Which characters are around an attention run influence whether it works or
+ * not.
+ *
+ * See <https://github.com/orgs/syntax-tree/discussions/60> for more info.
+ * See this markdown in a particular renderer to see what works:
+ *
+ * ```markdown
+ * |                         | A (letter inside) | B (punctuation inside) | C (whitespace inside) | D (nothing inside) |
+ * | ----------------------- | ----------------- | ---------------------- | --------------------- | ------------------ |
+ * | 1 (letter outside)      | x*y*z             | x*.*z                  | x* *z                 | x**z               |
+ * | 2 (punctuation outside) | .*y*.             | .*.*.                  | .* *.                 | .**.               |
+ * | 3 (whitespace outside)  | x *y* z           | x *.* z                | x * * z               | x ** z             |
+ * | 4 (nothing outside)     | *x*               | *.*                    | * *                   | **                 |
+ * ```
+ *
+ * @param {number} outside
+ *   Code point on the outer side of the run.
+ * @param {number} inside
+ *   Code point on the inner side of the run.
+ * @param {'*' | '_'} marker
+ *   Marker of the run.
+ *   Underscores are handled more strictly (they form less often) than
+ *   asterisks.
+ * @returns {EncodeSides}
+ *   Whether to encode characters.
+ */
+// Important: punctuation must never be encoded.
+// Punctuation is solely used by markdown constructs.
+// And by encoding itself.
+// Encoding them will break constructs or double encode things.
+function encodeInfo(outside, inside, marker) {
+  const outsideKind = (0, _micromarkUtilClassifyCharacter.classifyCharacter)(outside);
+  const insideKind = (0, _micromarkUtilClassifyCharacter.classifyCharacter)(inside);
+
+  // Letter outside:
+  if (outsideKind === undefined) {
+    return insideKind === undefined ?
+    // Letter inside:
+    // we have to encode *both* letters for `_` as it is looser.
+    // it already forms for `*` (and GFMs `~`).
+    marker === '_' ? {
+      inside: true,
+      outside: true
+    } : {
+      inside: false,
+      outside: false
+    } : insideKind === 1 ?
+    // Whitespace inside: encode both (letter, whitespace).
+    {
+      inside: true,
+      outside: true
+    } :
+    // Punctuation inside: encode outer (letter)
+    {
+      inside: false,
+      outside: true
+    };
+  }
+
+  // Whitespace outside:
+  if (outsideKind === 1) {
+    return insideKind === undefined ?
+    // Letter inside: already forms.
+    {
+      inside: false,
+      outside: false
+    } : insideKind === 1 ?
+    // Whitespace inside: encode both (whitespace).
+    {
+      inside: true,
+      outside: true
+    } :
+    // Punctuation inside: already forms.
+    {
+      inside: false,
+      outside: false
+    };
+  }
+
+  // Punctuation outside:
+  return insideKind === undefined ?
+  // Letter inside: already forms.
+  {
+    inside: false,
+    outside: false
+  } : insideKind === 1 ?
+  // Whitespace inside: encode inner (whitespace).
+  {
+    inside: true,
+    outside: false
+  } :
+  // Punctuation inside: already forms.
+  {
+    inside: false,
+    outside: false
+  };
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJuYW1lcyI6WyJfbWljcm9tYXJrVXRpbENsYXNzaWZ5Q2hhcmFjdGVyIiwicmVxdWlyZSIsImVuY29kZUluZm8iLCJvdXRzaWRlIiwiaW5zaWRlIiwibWFya2VyIiwib3V0c2lkZUtpbmQiLCJjbGFzc2lmeUNoYXJhY3RlciIsImluc2lkZUtpbmQiLCJ1bmRlZmluZWQiXSwic291cmNlcyI6WyJlbmNvZGUtaW5mby5qcyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIEBpbXBvcnQge0VuY29kZVNpZGVzfSBmcm9tICcuLi90eXBlcy5qcydcbiAqL1xuXG5pbXBvcnQge2NsYXNzaWZ5Q2hhcmFjdGVyfSBmcm9tICdtaWNyb21hcmstdXRpbC1jbGFzc2lmeS1jaGFyYWN0ZXInXG5cbi8qKlxuICogQ2hlY2sgd2hldGhlciB0byBlbmNvZGUgKGFzIGEgY2hhcmFjdGVyIHJlZmVyZW5jZSkgdGhlIGNoYXJhY3RlcnNcbiAqIHN1cnJvdW5kaW5nIGFuIGF0dGVudGlvbiBydW4uXG4gKlxuICogV2hpY2ggY2hhcmFjdGVycyBhcmUgYXJvdW5kIGFuIGF0dGVudGlvbiBydW4gaW5mbHVlbmNlIHdoZXRoZXIgaXQgd29ya3Mgb3JcbiAqIG5vdC5cbiAqXG4gKiBTZWUgPGh0dHBzOi8vZ2l0aHViLmNvbS9vcmdzL3N5bnRheC10cmVlL2Rpc2N1c3Npb25zLzYwPiBmb3IgbW9yZSBpbmZvLlxuICogU2VlIHRoaXMgbWFya2Rvd24gaW4gYSBwYXJ0aWN1bGFyIHJlbmRlcmVyIHRvIHNlZSB3aGF0IHdvcmtzOlxuICpcbiAqIGBgYG1hcmtkb3duXG4gKiB8ICAgICAgICAgICAgICAgICAgICAgICAgIHwgQSAobGV0dGVyIGluc2lkZSkgfCBCIChwdW5jdHVhdGlvbiBpbnNpZGUpIHwgQyAod2hpdGVzcGFjZSBpbnNpZGUpIHwgRCAobm90aGluZyBpbnNpZGUpIHxcbiAqIHwgLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gfCAtLS0tLS0tLS0tLS0tLS0tLSB8IC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gfCAtLS0tLS0tLS0tLS0tLS0tLS0tLS0gfCAtLS0tLS0tLS0tLS0tLS0tLS0gfFxuICogfCAxIChsZXR0ZXIgb3V0c2lkZSkgICAgICB8IHgqeSp6ICAgICAgICAgICAgIHwgeCouKnogICAgICAgICAgICAgICAgICB8IHgqICp6ICAgICAgICAgICAgICAgICB8IHgqKnogICAgICAgICAgICAgICB8XG4gKiB8IDIgKHB1bmN0dWF0aW9uIG91dHNpZGUpIHwgLip5Ki4gICAgICAgICAgICAgfCAuKi4qLiAgICAgICAgICAgICAgICAgIHwgLiogKi4gICAgICAgICAgICAgICAgIHwgLioqLiAgICAgICAgICAgICAgIHxcbiAqIHwgMyAod2hpdGVzcGFjZSBvdXRzaWRlKSAgfCB4ICp5KiB6ICAgICAgICAgICB8IHggKi4qIHogICAgICAgICAgICAgICAgfCB4ICogKiB6ICAgICAgICAgICAgICAgfCB4ICoqIHogICAgICAgICAgICAgfFxuICogfCA0IChub3RoaW5nIG91dHNpZGUpICAgICB8ICp4KiAgICAgICAgICAgICAgIHwgKi4qICAgICAgICAgICAgICAgICAgICB8ICogKiAgICAgICAgICAgICAgICAgICB8ICoqICAgICAgICAgICAgICAgICB8XG4gKiBgYGBcbiAqXG4gKiBAcGFyYW0ge251bWJlcn0gb3V0c2lkZVxuICogICBDb2RlIHBvaW50IG9uIHRoZSBvdXRlciBzaWRlIG9mIHRoZSBydW4uXG4gKiBAcGFyYW0ge251bWJlcn0gaW5zaWRlXG4gKiAgIENvZGUgcG9pbnQgb24gdGhlIGlubmVyIHNpZGUgb2YgdGhlIHJ1bi5cbiAqIEBwYXJhbSB7JyonIHwgJ18nfSBtYXJrZXJcbiAqICAgTWFya2VyIG9mIHRoZSBydW4uXG4gKiAgIFVuZGVyc2NvcmVzIGFyZSBoYW5kbGVkIG1vcmUgc3RyaWN0bHkgKHRoZXkgZm9ybSBsZXNzIG9mdGVuKSB0aGFuXG4gKiAgIGFzdGVyaXNrcy5cbiAqIEByZXR1cm5zIHtFbmNvZGVTaWRlc31cbiAqICAgV2hldGhlciB0byBlbmNvZGUgY2hhcmFjdGVycy5cbiAqL1xuLy8gSW1wb3J0YW50OiBwdW5jdHVhdGlvbiBtdXN0IG5ldmVyIGJlIGVuY29kZWQuXG4vLyBQdW5jdHVhdGlvbiBpcyBzb2xlbHkgdXNlZCBieSBtYXJrZG93biBjb25zdHJ1Y3RzLlxuLy8gQW5kIGJ5IGVuY29kaW5nIGl0c2VsZi5cbi8vIEVuY29kaW5nIHRoZW0gd2lsbCBicmVhayBjb25zdHJ1Y3RzIG9yIGRvdWJsZSBlbmNvZGUgdGhpbmdzLlxuZXhwb3J0IGZ1bmN0aW9uIGVuY29kZUluZm8ob3V0c2lkZSwgaW5zaWRlLCBtYXJrZXIpIHtcbiAgY29uc3Qgb3V0c2lkZUtpbmQgPSBjbGFzc2lmeUNoYXJhY3RlcihvdXRzaWRlKVxuICBjb25zdCBpbnNpZGVLaW5kID0gY2xhc3NpZnlDaGFyYWN0ZXIoaW5zaWRlKVxuXG4gIC8vIExldHRlciBvdXRzaWRlOlxuICBpZiAob3V0c2lkZUtpbmQgPT09IHVuZGVmaW5lZCkge1xuICAgIHJldHVybiBpbnNpZGVLaW5kID09PSB1bmRlZmluZWRcbiAgICAgID8gLy8gTGV0dGVyIGluc2lkZTpcbiAgICAgICAgLy8gd2UgaGF2ZSB0byBlbmNvZGUgKmJvdGgqIGxldHRlcnMgZm9yIGBfYCBhcyBpdCBpcyBsb29zZXIuXG4gICAgICAgIC8vIGl0IGFscmVhZHkgZm9ybXMgZm9yIGAqYCAoYW5kIEdGTXMgYH5gKS5cbiAgICAgICAgbWFya2VyID09PSAnXydcbiAgICAgICAgPyB7aW5zaWRlOiB0cnVlLCBvdXRzaWRlOiB0cnVlfVxuICAgICAgICA6IHtpbnNpZGU6IGZhbHNlLCBvdXRzaWRlOiBmYWxzZX1cbiAgICAgIDogaW5zaWRlS2luZCA9PT0gMVxuICAgICAgICA/IC8vIFdoaXRlc3BhY2UgaW5zaWRlOiBlbmNvZGUgYm90aCAobGV0dGVyLCB3aGl0ZXNwYWNlKS5cbiAgICAgICAgICB7aW5zaWRlOiB0cnVlLCBvdXRzaWRlOiB0cnVlfVxuICAgICAgICA6IC8vIFB1bmN0dWF0aW9uIGluc2lkZTogZW5jb2RlIG91dGVyIChsZXR0ZXIpXG4gICAgICAgICAge2luc2lkZTogZmFsc2UsIG91dHNpZGU6IHRydWV9XG4gIH1cblxuICAvLyBXaGl0ZXNwYWNlIG91dHNpZGU6XG4gIGlmIChvdXRzaWRlS2luZCA9PT0gMSkge1xuICAgIHJldHVybiBpbnNpZGVLaW5kID09PSB1bmRlZmluZWRcbiAgICAgID8gLy8gTGV0dGVyIGluc2lkZTogYWxyZWFkeSBmb3Jtcy5cbiAgICAgICAge2luc2lkZTogZmFsc2UsIG91dHNpZGU6IGZhbHNlfVxuICAgICAgOiBpbnNpZGVLaW5kID09PSAxXG4gICAgICAgID8gLy8gV2hpdGVzcGFjZSBpbnNpZGU6IGVuY29kZSBib3RoICh3aGl0ZXNwYWNlKS5cbiAgICAgICAgICB7aW5zaWRlOiB0cnVlLCBvdXRzaWRlOiB0cnVlfVxuICAgICAgICA6IC8vIFB1bmN0dWF0aW9uIGluc2lkZTogYWxyZWFkeSBmb3Jtcy5cbiAgICAgICAgICB7aW5zaWRlOiBmYWxzZSwgb3V0c2lkZTogZmFsc2V9XG4gIH1cblxuICAvLyBQdW5jdHVhdGlvbiBvdXRzaWRlOlxuICByZXR1cm4gaW5zaWRlS2luZCA9PT0gdW5kZWZpbmVkXG4gICAgPyAvLyBMZXR0ZXIgaW5zaWRlOiBhbHJlYWR5IGZvcm1zLlxuICAgICAge2luc2lkZTogZmFsc2UsIG91dHNpZGU6IGZhbHNlfVxuICAgIDogaW5zaWRlS2luZCA9PT0gMVxuICAgICAgPyAvLyBXaGl0ZXNwYWNlIGluc2lkZTogZW5jb2RlIGlubmVyICh3aGl0ZXNwYWNlKS5cbiAgICAgICAge2luc2lkZTogdHJ1ZSwgb3V0c2lkZTogZmFsc2V9XG4gICAgICA6IC8vIFB1bmN0dWF0aW9uIGluc2lkZTogYWxyZWFkeSBmb3Jtcy5cbiAgICAgICAge2luc2lkZTogZmFsc2UsIG91dHNpZGU6IGZhbHNlfVxufVxuIl0sIm1hcHBpbmdzIjoiOzs7Ozs7QUFJQSxJQUFBQSwrQkFBQSxHQUFBQyxPQUFBO0FBSkE7QUFDQTtBQUNBOztBQUlBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ08sU0FBU0MsVUFBVUEsQ0FBQ0MsT0FBTyxFQUFFQyxNQUFNLEVBQUVDLE1BQU0sRUFBRTtFQUNsRCxNQUFNQyxXQUFXLEdBQUcsSUFBQUMsaURBQWlCLEVBQUNKLE9BQU8sQ0FBQztFQUM5QyxNQUFNSyxVQUFVLEdBQUcsSUFBQUQsaURBQWlCLEVBQUNILE1BQU0sQ0FBQzs7RUFFNUM7RUFDQSxJQUFJRSxXQUFXLEtBQUtHLFNBQVMsRUFBRTtJQUM3QixPQUFPRCxVQUFVLEtBQUtDLFNBQVM7SUFDM0I7SUFDQTtJQUNBO0lBQ0FKLE1BQU0sS0FBSyxHQUFHLEdBQ1o7TUFBQ0QsTUFBTSxFQUFFLElBQUk7TUFBRUQsT0FBTyxFQUFFO0lBQUksQ0FBQyxHQUM3QjtNQUFDQyxNQUFNLEVBQUUsS0FBSztNQUFFRCxPQUFPLEVBQUU7SUFBSyxDQUFDLEdBQ2pDSyxVQUFVLEtBQUssQ0FBQztJQUNkO0lBQ0E7TUFBQ0osTUFBTSxFQUFFLElBQUk7TUFBRUQsT0FBTyxFQUFFO0lBQUksQ0FBQztJQUM3QjtJQUNBO01BQUNDLE1BQU0sRUFBRSxLQUFLO01BQUVELE9BQU8sRUFBRTtJQUFJLENBQUM7RUFDdEM7O0VBRUE7RUFDQSxJQUFJRyxXQUFXLEtBQUssQ0FBQyxFQUFFO0lBQ3JCLE9BQU9FLFVBQVUsS0FBS0MsU0FBUztJQUMzQjtJQUNBO01BQUNMLE1BQU0sRUFBRSxLQUFLO01BQUVELE9BQU8sRUFBRTtJQUFLLENBQUMsR0FDL0JLLFVBQVUsS0FBSyxDQUFDO0lBQ2Q7SUFDQTtNQUFDSixNQUFNLEVBQUUsSUFBSTtNQUFFRCxPQUFPLEVBQUU7SUFBSSxDQUFDO0lBQzdCO0lBQ0E7TUFBQ0MsTUFBTSxFQUFFLEtBQUs7TUFBRUQsT0FBTyxFQUFFO0lBQUssQ0FBQztFQUN2Qzs7RUFFQTtFQUNBLE9BQU9LLFVBQVUsS0FBS0MsU0FBUztFQUMzQjtFQUNBO0lBQUNMLE1BQU0sRUFBRSxLQUFLO0lBQUVELE9BQU8sRUFBRTtFQUFLLENBQUMsR0FDL0JLLFVBQVUsS0FBSyxDQUFDO0VBQ2Q7RUFDQTtJQUFDSixNQUFNLEVBQUUsSUFBSTtJQUFFRCxPQUFPLEVBQUU7RUFBSyxDQUFDO0VBQzlCO0VBQ0E7SUFBQ0MsTUFBTSxFQUFFLEtBQUs7SUFBRUQsT0FBTyxFQUFFO0VBQUssQ0FBQztBQUN2QyIsImlnbm9yZUxpc3QiOltdfQ==

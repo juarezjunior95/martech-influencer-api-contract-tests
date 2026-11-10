@@ -1,0 +1,305 @@
+/**
+ * 🔢 BRAND POWER OVERVIEW FORMATTER
+ * 🎯 Component: Brand Power Overview Charts
+ * 📍 Used on: Portfolio Brand > Brand Analysis > Overview > Brand Power
+ * 🔄 Input: total-per-month-quarter-all-st, total-per-year-all-st, total-per-year-full-all-st, tooltip-st
+ * 📤 Output: { total_per_year_full, total_per_month_quarter, total_per_year }
+ * 🔧 Config: colors, kpi, unitOfMeasure, title, measure, coerceVariation
+ * 🧩 Commands required (registered in src/infrastructure/repositories/helpers/index.ts):
+ *    $ensureArray, $formatDateToQuarter, $getColorUpDown,
+ *    $labelPeriodMonth, $labelPeriodQuarter
+ *    Renaming any of these in helpers/index.ts breaks this formatter silently.
+ */
+(
+  /* ─── Config ─── */
+  $config := {
+    "colors": {
+      "previousYear": "#E8D19D",
+      "currentYear": "#D1A33C"
+    },
+    "kpi": "power",
+    "unitOfMeasure": "pp",
+    "title": "Brand Power",
+    "measure": "[%]",
+    "borderColor": "#4BC0C0",
+    "coerceVariation": false
+  };
+
+  /* ─── Helpers ─── */
+  $extractMonthYear := function($dateStr) {
+    (
+      $date := $toMillis($dateStr);
+      {
+        "month": $number($fromMillis($date, "[M01]")),
+        "year": $number($fromMillis($date, "[Y0001]"))
+      }
+    )
+  };
+
+  $filterByKpi := function($items) {
+    $filter($items, function($item) { $lowercase($item.kpi_name) = $config.kpi })
+  };
+
+  $buildVariationGroup := function($value) {
+    (
+      $parsedValue := $config.coerceVariation ? $toNumberOrUndefined($value) : $value;
+      $displayVariation := $config.coerceVariation
+        ? ($exists($parsedValue) ? $parsedValue : "-")
+        : $value;
+      {
+        "variationsGroup": [
+          {
+            "variation": $displayVariation,
+            "direction": $getColorUpDown($parsedValue, "up", "down", {
+              "rule": "standard",
+              "includeZero": false
+            }),
+            "unit_of_measure": $config.unitOfMeasure
+          }
+        ]
+      }
+    )
+  };
+
+  $buildVariationsRows := function($items) {
+    {
+      "kpi": {
+        "data": $map($items, function($item) {
+          $buildVariationGroup($item.ac_vs_ly)
+        })
+      }
+    }
+  };
+
+  $buildVariationCaption := function($title, $subtitle, $items) {
+    {
+      "title": $title,
+      "subtitle": $subtitle,
+      "variationsRows": $buildVariationsRows($items),
+      "information_order": false
+    }
+  };
+
+  $buildYearTailColors := function($items) {
+    $count($items) = 0
+      ? []
+      : $map($items, function($item, $index) {
+        $index < $count($items) - 1 ? $config.colors.previousYear : $config.colors.currentYear
+      })
+  };
+
+  /* ─── Extract & Filter Datasources ─── */
+  $monthlyAll := $lookup(datasources, "portfolio-brand_brand-analysis_total-per-month-quarter-all-st");
+  $yearlyAll := $lookup(datasources, "portfolio-brand_brand-analysis_total-per-year-all-st");
+  $yearFullAll := $lookup(datasources, "portfolio-brand_brand-analysis_total-per-year-full-all-st");
+  $tooltipAll := $lookup(datasources, "portfolio-brand_brand-analysis_tooltip-st");
+
+  $monthly := $filterByKpi($monthlyAll);
+  $yearly := $filterByKpi($yearlyAll);
+  $yearFull := $filterByKpi($yearFullAll);
+  $tooltip := $filterByKpi($tooltipAll);
+
+  /* ─── total_per_year_full: Multi-year bar chart ─── */
+  $totalPerYearFull := $count($yearFull) = 0
+    ? { "empty": true }
+    : (
+      $firstItem := $yearFull[0];
+      $lastItem := $yearFull[$count($yearFull) - 1];
+
+      $tooltipItem := $tooltip[0];
+      $tooltipComparison := $exists($tooltipItem) ? $tooltipItem.ac_vs_ly : undefined;
+      $fallbackComparison := (
+        $calculated := $round($lastItem.ac - $firstItem.ac, 1);
+        $exists($calculated) ? $calculated : null
+      );
+      $overallComparison := $exists($tooltipComparison) ? $tooltipComparison : $fallbackComparison;
+
+      $endInfo := $extractMonthYear($lastItem.dt_end);
+      $refreshMonth := $labelPeriodMonth($endInfo.year, $endInfo.month);
+      $refreshQuarter := $labelPeriodQuarter($endInfo.year, $endInfo.month);
+
+      {
+        "datasets": [
+          {
+            "data": [$yearFull.ac],
+            "type": "bar",
+            "label": $lastItem.year_ini,
+            "borderColor": $config.borderColor
+          }
+        ],
+        "refreshDate": {
+          "month": $refreshMonth,
+          "quarter": $refreshQuarter
+        },
+        "comparison_data": {
+          "comparison": $overallComparison,
+          "unit_of_measure": $config.unitOfMeasure,
+          "direction": $getColorUpDown($overallComparison, "up", "down", {
+            "rule": "standard",
+            "includeZero": false
+          })
+        },
+        "type": "bar",
+        "labels_type": "year_ini",
+        "comparison_unit_of_measure": $config.unitOfMeasure,
+        "formatted_data": false,
+        "labels": $yearFull.year_ini,
+        "variation_caption": $buildVariationCaption(
+          "Comparison",
+          "vs LY [ " & $string($firstItem.year_ini) & " - " & $string($lastItem.year_ini) & " ]",
+          $yearFull
+        ),
+        "backgroundColor": $map($yearFull, function($item) { $config.colors.previousYear })
+      }
+    );
+
+  /* ─── total_per_month_quarter: Quarterly bar chart ─── */
+  $totalPerMonthQuarter := $count($monthly) = 0
+    ? { "empty": true }
+    : (
+      $maxYear := $max($monthly.year_ini);
+      $prevYearData := $filter($monthly, function($item) { $item.year_ini < $maxYear });
+      $currYearData := $filter($monthly, function($item) { $item.year_ini = $maxYear });
+      $count($currYearData) = 0 ? { "empty": true } : ($hasPrevYear := $count($prevYearData) > 0;
+
+      $lastCurrItem := $currYearData[$count($currYearData) - 1];
+      $endInfo := $extractMonthYear($lastCurrItem.dt_end);
+      $refreshMonth := $labelPeriodMonth($endInfo.year, $endInfo.month);
+      $refreshQuarter := $labelPeriodQuarter($endInfo.year, $endInfo.month);
+
+      $prevYear := $hasPrevYear ? $prevYearData[0].year_ini : ($maxYear - 1);
+      $currYear := $maxYear;
+
+      /* Build combined quarterly data: prev year + current year */
+      $prevValues := $hasPrevYear
+        ? $ensureArray($prevYearData.ac)
+        : $ensureArray($currYearData.ly);
+      $currValues := $ensureArray($currYearData.ac);
+      $allData := $append($prevValues, $currValues);
+
+      /* Build quarter labels */
+      $prevLabels := $hasPrevYear
+        ? $map($prevYearData, function($item) { $labelPeriodQuarter($item.year_ini, $item.month_ini) })
+        : $map($currYearData, function($item) { $labelPeriodQuarter($prevYear, $item.month_ini) });
+      $currLabels := $map($currYearData, function($item) { $labelPeriodQuarter($currYear, $item.month_ini) });
+      $allLabels := $append($prevLabels, $currLabels);
+
+      /* Build variations */
+      $prevVariations := $hasPrevYear
+        ? $map($prevYearData, function($item) { $buildVariationGroup($item.ac_vs_ly) })
+        : [];
+      $currVariations := $map($currYearData, function($item) { $buildVariationGroup($item.ac_vs_ly) });
+      $allVariations := $append($prevVariations, $currVariations);
+
+      /* Background colors: prev year color for first half, current year for second */
+      $prevBgColors := $map($prevLabels, function($label) { $config.colors.previousYear });
+      $currBgColors := $map($currLabels, function($label) { $config.colors.currentYear });
+      $bgColors := $append($prevBgColors, $currBgColors);
+
+      $prevYearShort := $substring($string($prevYear), 2, 2);
+      $currYearShort := $substring($string($currYear), 2, 2);
+
+      {
+        "datasets": [
+          {
+            "data": [$allData],
+            "type": "bar",
+            "label": "Previous Year",
+            "borderColor": $config.colors.previousYear,
+            "backgroundColor": [$config.colors.previousYear]
+          }
+        ],
+        "refreshDate": {
+          "month": $refreshMonth,
+          "quarter": $refreshQuarter
+        },
+        "type": "bar",
+        "labels_type": "quarters",
+        "referencialUnitMeasure": $config.unitOfMeasure,
+        "comparison_unit_of_measure": $config.unitOfMeasure,
+        "formatted_data": false,
+        "labels": $allLabels,
+        "variation_caption": {
+          "title": "Comparison",
+          "subtitle": "vs LY [ Q'" & $prevYearShort & " - Q'" & $currYearShort & " ]",
+          "variationsRows": {
+            "kpi": {
+              "data": $allVariations
+            }
+          },
+          "information_order": false
+        },
+        "chartLegend": [
+          { "label": "Previous Year", "color": $config.colors.previousYear },
+          { "label": "Current Year", "color": $config.colors.currentYear }
+        ],
+        "backgroundColor": $bgColors
+      }
+      )
+    );
+
+  /* ─── total_per_year: YTD bar chart with big number ─── */
+  $totalPerYear := $count($yearly) = 0
+    ? { "empty": true }
+    : (
+      $firstItem := $yearly[0];
+      $lastItem := $yearly[$count($yearly) - 1];
+
+      $endInfo := $extractMonthYear($lastItem.dt_end);
+      $refreshMonth := $labelPeriodMonth($endInfo.year, $endInfo.month);
+      $refreshQuarter := $labelPeriodQuarter($endInfo.year, $endInfo.month);
+
+      $bigNumberDirection := $getColorUpDown($lastItem.ac_vs_ly, "up", "down", {
+        "rule": "standard",
+        "includeZero": false
+      });
+
+      $prevPeriodLabel := $formatDateToQuarter($lastItem.previous_dt_end);
+      $versusLabel := "vs " & $prevPeriodLabel & " YTD";
+
+      $bgColors := $buildYearTailColors($yearly);
+
+      {
+        "datasets": [
+          {
+            "data": [$yearly.ac],
+            "type": "bar",
+            "label": "Current Year",
+            "borderColor": $config.borderColor,
+            "backgroundColor": [$bgColors]
+          }
+        ],
+        "refreshDate": {
+          "month": $refreshMonth,
+          "quarter": $refreshQuarter
+        },
+        "big_number": {
+          "title": $config.title,
+          "totalUnitOfMeasureLabel": $config.unitOfMeasure,
+          "total": $lastItem.ac_vs_ly,
+          "bigNumberDirection": $bigNumberDirection,
+          "measure": $config.measure,
+          "versus": $versusLabel
+        },
+        "type": "bar",
+        "labels_type": "year_ini",
+        "formatted_data": false,
+        "labels": $yearly.year_ini,
+        "variation_caption": $buildVariationCaption(
+          "YTD",
+          "[ " & $string($firstItem.year_ini) & " - " & $string($lastItem.year_ini) & " ]",
+          $yearly
+        ),
+        "backgroundColor": $bgColors
+      }
+    );
+
+  /* ─── Final Output ─── */
+  ($totalPerYearFull.empty and $totalPerMonthQuarter.empty and $totalPerYear.empty)
+    ? { "empty": true }
+    : {
+      "total_per_year_full": $totalPerYearFull,
+      "total_per_month_quarter": $totalPerMonthQuarter,
+      "total_per_year": $totalPerYear
+    }
+)

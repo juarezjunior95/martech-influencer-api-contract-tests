@@ -1,0 +1,172 @@
+/**
+ * 🔢 CORES OVERTIME TRENDS CHARTS FORMATTER
+ * 🎯 Component: LineBarChartsSectionData
+ * 📍 Used on: Value Creation > Performance Tool > Drill Down > Finance > Cores > Overtime Trends
+ * 🔄 Input: cores_overtime-trends_by-granularity, cores_overtime-trends_snapshot
+ * 📤 Output: { legend, lineChart, barChart } or { "empty": true } when no data
+ */
+
+(
+  $byGranularityKey := "value-creation_performance-tool_drill-down_finance_cores_overtime-trends_by-granularity";
+  $snapshotKey := "value-creation_performance-tool_drill-down_finance_cores_overtime-trends_snapshot";
+
+  $lineChartItems := $lookup(datasources, $byGranularityKey);
+  $lineChartHasData := $count($lineChartItems) > 0;
+
+  $allLineValues := $lineChartItems.(
+    $exists($.ly) and $type($.ly) = "number" ? $.ly :
+    $exists($.bu) and $type($.bu) = "number" ? $.bu :
+    $exists($.ac) and $type($.ac) = "number" ? $.ac : null
+  )[$ != null];
+  $lineChartMin := $lineChartHasData and $count($allLineValues) > 0 ? $min($allLineValues) : 0;
+  $lineChartMax := $lineChartHasData and $count($allLineValues) > 0 ? $max($allLineValues) : 25;
+  $suggestedMin := $round($lineChartMin * 0.9, 0);
+  $suggestedMax := $round($lineChartMax * 1.1, 0);
+
+  $periodType := $lineChartHasData and $exists($lineChartItems[0].period_type) ? $lineChartItems[0].period_type : null;
+  $findCurrentMonthIndex := function($items) {
+    $map($items, function($item, $index) {
+      $item.ac != null and $type($item.ac) = "number" ? $index : null
+    })[$ != null][-1]
+  };
+  $currentMonthIndex := $findCurrentMonthIndex($lineChartItems);
+  $lineChartLabelsCount := $count($lineChartItems);
+  $currentMonthIndex := $currentMonthIndex != null ? $currentMonthIndex : $lineChartLabelsCount - 1;
+
+  $highlightedIndexes := $periodType = "L3M" and $currentMonthIndex != null ? (
+    $currentMonthIndex = 0 ? [0] :
+    $currentMonthIndex = 1 ? [0, 1] :
+    [$currentMonthIndex - 2, $currentMonthIndex - 1, $currentMonthIndex]
+  ) : $periodType = "MTD" and $currentMonthIndex != null ? [$currentMonthIndex] : [];
+
+  $barChartSnapshotItems := $lookup(datasources, $snapshotKey);
+  $barChartHasData := $count($barChartSnapshotItems) > 0 and $exists($barChartSnapshotItems.ac[$type($) = "number"][0]);
+
+  $hasData := $lineChartHasData or $barChartHasData;
+
+  $monthLabelTitle := function($ml) {
+    $exists($ml) and $length($ml) >= 3
+      ? $uppercase($substring($ml, 0, 1)) & $lowercase($substring($ml, 1, 3))
+      : $string($ml)
+  };
+
+  $hasData = false ? { "empty": true } : {
+    "legend": [
+      { "label": "Last Year" },
+      { "label": "Budget" },
+      { "label": "Current" }
+    ],
+    "lineChart": $lineChartHasData ? {
+      "suggestedMin": $suggestedMin,
+      "suggestedMax": $suggestedMax,
+      "datasets": [
+        {
+          "label": "Current",
+          "data": $lineChartItems.($.ac != null and $type($.ac) = "number" ? $round($.ac, 1) : null),
+          "borderColor": "#B8951C",
+          "pointBackgroundColor": "#B8951C",
+          "pointBorderColor": "#FFFFFF"
+        },
+        {
+          "label": "Last Year",
+          "data": $lineChartItems.($.ly != null and $type($.ly) = "number" ? $round($.ly, 1) : null),
+          "borderColor": "#E5DCC3",
+          "pointBackgroundColor": "#E5DCC3",
+          "pointBorderColor": "#FFFFFF"
+        },
+        {
+          "label": "Budget",
+          "data": $lineChartItems.($.bu != null and $type($.bu) = "number" ? $round($.bu, 1) : null),
+          "borderColor": "#F1D715",
+          "pointBackgroundColor": "#F1D715",
+          "pointBorderColor": "#FFFFFF",
+          "borderDash": [5, 5]
+        }
+      ],
+      "labels": $map($lineChartItems, function($item) { $monthLabelTitle($item.month_label) }),
+      "formattedData": [
+        $lineChartItems.($.ly != null and $type($.ly) = "number" ? $formatCompactNumber($.ly) : "-"),
+        $lineChartItems.($.ac != null and $type($.ac) = "number" ? $formatCompactNumber($.ac) : "-"),
+        $lineChartItems.($.bu != null and $type($.bu) = "number" ? $formatCompactNumber($.bu) : "-")
+      ],
+      "highlightedIndexes": $highlightedIndexes,
+      "comparisonLine": {
+        "data": [
+          {
+            "title": "vs LY",
+            "data": $map($lineChartItems, function($item) {
+              (
+                $hasValue := $item.ac_vs_ly != null and $type($item.ac_vs_ly) = "number";
+                {
+                  "value": $hasValue ? $formatNumber($item.ac_vs_ly, "#,##0.0") & "%" : "-",
+                  "measure": "",
+                  "trend": $hasValue ? $getTrend($item.ac_vs_ly, $item.variationDirectionVsLy) : undefined
+                }
+              )
+            })
+          },
+          {
+            "title": "vs BU",
+            "data": $map($lineChartItems, function($item) {
+              (
+                $hasValue := $item.ac_vs_bu != null and $type($item.ac_vs_bu) = "number";
+                {
+                  "value": $hasValue ? $formatNumber($item.ac_vs_bu, "#,##0.0") & "%" : "-",
+                  "measure": "",
+                  "trend": $hasValue ? $getTrend($item.ac_vs_bu, $item.variationDirectionVsBu) : undefined
+                }
+              )
+            })
+          }
+        ]
+      }
+    } : [],
+    "barChart": $barChartHasData ? {
+      "labels": $barChartSnapshotItems.period,
+      "datasets": [
+        {
+          "label": "Volume",
+          "data": $barChartSnapshotItems.($.ac != null and $type($.ac) = "number" ? $round($.ac, 1) : null),
+          "backgroundColor": $map($barChartSnapshotItems, function($item, $i) {
+        $i = 0 ? "#E5DCC3" : $i = 1 ? "#F1D715" : "#B8951C"
+      }),
+          "barThickness": 40
+        }
+      ],
+      "stripedIndexes": $count($barChartSnapshotItems) >= 2 ? [1] : [],
+      "formattedData": [[
+        $barChartSnapshotItems.($.ac != null and $type($.ac) = "number" ? $formatCompactNumber($.ac) : "-")
+      ]],
+      "comparisonLine": {
+        "data": [
+          {
+            "title": "vs LY",
+            "data": $map($barChartSnapshotItems, function($item) {
+              (
+                $hasValue := $item.ac_vs_ly != null and $type($item.ac_vs_ly) = "number";
+                {
+                  "value": $hasValue ? $formatNumber($item.ac_vs_ly, "#,##0.0") : "-",
+                  "measure": $hasValue ? $item.comp_unit_of_measure : "",
+                  "trend": $hasValue ? $getTrend($item.ac_vs_ly, $item.variationDirectionVsLy) : undefined
+                }
+              )
+            })
+          },
+          {
+            "title": "vs BU",
+            "data": $map($barChartSnapshotItems, function($item) {
+              (
+                $hasValue := $item.ac_vs_bu != null and $type($item.ac_vs_bu) = "number";
+                {
+                  "value": $hasValue ? $formatNumber($item.ac_vs_bu, "#,##0.0") : "-",
+                  "measure": $hasValue ? $item.comp_unit_of_measure : "",
+                  "trend": $hasValue ? $getTrend($item.ac_vs_bu, $item.variationDirectionVsBu) : undefined
+                }
+              )
+            })
+          }
+        ]
+      }
+    } : []
+  }
+)

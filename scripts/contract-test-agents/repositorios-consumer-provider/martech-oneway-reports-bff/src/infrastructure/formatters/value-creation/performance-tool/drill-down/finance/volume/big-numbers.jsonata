@@ -1,0 +1,98 @@
+/**
+ * 🔢 OVERTIME PERFORMANCE FORMATTER
+ * 🎯 Component: BigNumberCards
+ * 📍 Used on: Value Creation > Performance Tool > Drill Down > Volume > Overtime Performance
+ * 🔄 Input: overtime-performance data
+ * 📤 Output: BigNumberCards interface
+ */
+
+(
+  $datasourceName := "value-creation_performance-tool_drill-down_finance_volume_overtime-performance";
+  $data := $lookup(datasources, $datasourceName);
+  
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number" ?
+      $formatNumber($value, '#,##0.0')
+      : "-"
+  };
+  
+  $getTrend := function($value, $direction) {
+    ($exists($value) = false or $value = null or $value = 0) ? "positive" : ($direction = "up" ? "positive" : "negative")
+  };
+  
+  $getPeriodLabel := function($period) {
+    (
+      $type := $period.period;
+      $refresh := $period.refreshMonthLabel;
+      $suffix := $period.vs_ly_label_suffix;
+      
+      $type = "YTD" ? "Volume " & $type :
+      $type = "L3M" ? "Volume L3M" :
+      $type = "MTD" ? "Volume " & $refresh :
+      "Volume " & $type
+    )
+  };
+  
+  $formatMeasure := function($measure) {
+    $exists($measure) and $measure != "" ? "[ " & $measure & " ]" : ""
+  };
+  
+  $getPeriodOrder := function($periodType) {
+    $periodType = "YTD" ? 1 :
+    $periodType = "L3M" ? 2 :
+    $periodType = "MTD" ? 3 :
+    4
+  };
+  
+  $hasValidData := function($period) {
+    $exists($period) and 
+    $exists($period.ac) and 
+    $type($period.ac) = "number"
+  };
+  
+  $buildPeriodData := function($period) {
+    $hasValidData($period) ? [
+      {
+        "bigNumber": {
+          "value": $formatValue($period.ac_vs_ly),
+          "measure": $period.comp_unit_of_measure,
+          "trend": $getTrend($period.ac_vs_ly, $period.variationDirectionVsLy)
+        },
+        "secondaryInfo": {
+          "value": $formatValue($period.ac),
+          "label": $formatMeasure($period.unit_of_measure)
+        },
+        "comparison": {
+          "label": "vs",
+          "value": "LY"
+        }
+      },
+      {
+        "bigNumber": {
+          "value": $formatValue($period.ac_vs_bu),
+          "measure": $period.comp_unit_of_measure,
+          "trend": $getTrend($period.ac_vs_bu, $period.variationDirectionVsBu)
+        },
+        "comparison": {
+          "label": "vs",
+          "value": "BU"
+        }
+      }
+    ] : []
+  };
+  
+  $expectedPeriods := ["YTD", "L3M", "MTD"];
+  
+  $map($expectedPeriods, function($periodType) {
+    (
+      $period := $filter($data, function($item) { $item.period = $periodType })[0];
+      {
+        "header": {
+          "title": $exists($period) ? $getPeriodLabel($period) : "Volume " & $periodType,
+          "measure": $exists($period) ? $formatMeasure($period.unit_of_measure) : "[ k hl ]"
+        },
+        "data": $buildPeriodData($period)
+      }
+    )
+  })
+)

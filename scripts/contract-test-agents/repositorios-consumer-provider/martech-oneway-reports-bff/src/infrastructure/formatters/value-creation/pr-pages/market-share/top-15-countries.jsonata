@@ -1,0 +1,239 @@
+/* *
+ * 🔢 Waterfall charts — Market Share Top 15 Countries
+ * 🎯 Component: Waterfall
+ * 📍 Used on: Market Share Pages (Global Moves)
+ * 🔄 Input: datasource (country as object, ac, vs_ly, vol_vs_ly, rnk, dt_end, filter_period_type)
+ * 📤 Output: Waterfall chart — total rows (first/last by rnk): MTD → Mon'YY via $formatDateToMonth; YTD → YTD'YY from dt_end; comparisonLine measure: vs LY → comp_unit_of_measure (pp), Vol. vs LY → unit_of_measure (default %) */
+(
+  $ds := $keys($.datasources)[0];
+  $config := {
+    "legend": [
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "color": "#49764B",
+        "icon": "TrendingUp"
+      },
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "color": "#A20A0A",
+        "icon": "TrendingDown"
+      }
+    ],
+    "comparisons": [
+      {
+        "title": "vs LY",
+        "value_attribute": "vs_ly"
+      },
+      {
+        "title": "Vol. vs LY",
+        "value_attribute": "vol_vs_ly"
+      }
+    ]
+  };
+
+  $rawData := $.datasources.$lookup($ds);
+  $empty := $count($rawData) = 0;
+
+  $sorted := $sort($rawData, function($a, $b) { $a.rnk > $b.rnk });
+
+  $data := $map($sorted, function($item) {
+    $merge([$item, {
+      "computed_key": $item.country_iso_code_3 & "|" & $string($item.rnk)
+    }])
+  });
+
+  $keys := $data.computed_key;
+
+  $dataByKey := $reduce(
+    $data,
+    function($acc, $item) {
+      $merge([$acc, { ($item.computed_key): $item }])
+    },
+    {}
+  );
+
+  $firstRnk := $sorted[0].rnk;
+  $lastRnk := $sorted[$count($sorted) - 1].rnk;
+
+  $isTotalRow := function($item) {
+    $item.rnk = $firstRnk or $item.rnk = $lastRnk
+  };
+
+  $getItemDate := function($item) {
+    $exists($item.dt_end) ? $item.dt_end : $item.filter_dt_end
+  };
+
+  $startItem := $sorted[0];
+  $endItem := $sorted[$count($sorted) - 1];
+  $startDate := $getItemDate($startItem);
+  $endDate := $getItemDate($endItem);
+  $sameDate := $string($startDate) = $string($endDate);
+
+  $getLabel := function($item) {
+    $isTotalRow($item)
+      ? (
+        $dateValue := $getItemDate($item);
+        $shouldShiftYear := $item.rnk = $firstRnk and $sameDate;
+        $lowercase($string($item.filter_period_type)) = "ytd"
+          ? (
+            $dtStr := $string($dateValue);
+            $match($dtStr, /^\d{4}-\d{2}-\d{2}/)
+              ? (
+                $yearTwoDigits := $number($substring($dtStr, 2, 2));
+                $finalYear := $shouldShiftYear ? $yearTwoDigits - 1 : $yearTwoDigits;
+                "YTD'" & ($finalYear < 10 ? "0" & $string($finalYear) : $string($finalYear))
+              )
+              : "-"
+          )
+          : (
+            $shouldShiftYear
+              ? (
+                $dtStr := $string($dateValue);
+                $match($dtStr, /^\d{4}-\d{2}-\d{2}/)
+                  ? (
+                    $year := $number($substring($dtStr, 0, 4)) - 1;
+                    $rest := $substring($dtStr, 4);
+                    $formatDateToMonth($string($year) & $rest)
+                  )
+                  : $formatDateToMonth($dateValue)
+              )
+              : $formatDateToMonth($dateValue)
+          )
+      )
+      : $item.country_iso_code_3
+  };
+
+  /* Coerce datasource unit fields to a trimmed string; empty / null / missing → "". */
+  $normalizeComparisonMeasureField := function($raw) {
+    (
+      $not($exists($raw)) or $raw = null
+        ? ""
+        : (
+            $t := $trim($string($raw));
+            $t
+          )
+    )
+  };
+
+  /* Vol. vs LY uses volume unit (default %); vs LY uses comparison unit (e.g. pp). */
+  $comparisonLineMeasure := function($item, $comparison) {
+    (
+      $comparison.value_attribute = "vol_vs_ly"
+        ? (
+            $u := $normalizeComparisonMeasureField($item.unit_of_measure);
+            $u != "" ? $u : "%"
+          )
+        : $normalizeComparisonMeasureField($item.comp_unit_of_measure)
+    )
+  };
+
+  $datasetData := $map(
+    $keys,
+    function($key) {
+      (
+        $item := $lookup($dataByKey, $key);
+        $exists($item) ? $safeNumber($item.delta) : 0
+      )
+    }
+  );
+
+  /* Grey ABI bridge anchors use country_iso_code_3 "ABI" (start/end rows). Append % so labels match market-share [%] and other bars. */
+  $formattedData := $map(
+    $keys,
+    function($key) {
+      (
+        $item := $lookup($dataByKey, $key);
+        $exists($item)
+          ? (
+            $datapoint := $safeNumber($item.delta);
+            $fmt := $formatCompactNumber($datapoint);
+            $item.country_iso_code_3 = "ABI" and $fmt != "-"
+              ? $fmt & "%"
+              : $fmt
+          )
+          : "-"
+      )
+    }
+  );
+
+  $responseLabels := $map(
+    $keys,
+    function($key) {
+      (
+        $item := $lookup($dataByKey, $key);
+        $exists($item) ? $getLabel($item) : "-"
+      )
+    }
+  );
+
+  $labelsAvatar := $map(
+    $keys,
+    function($key) {
+      (
+        $item := $lookup($dataByKey, $key);
+        $exists($item)
+          ? {
+            "title": $getLabel($item),
+            "mainBrand": {
+              "src": $item.country.imageIcon,
+              "alt": $item.country_iso_code_3 & " FLAG"
+            }
+          }
+          : {
+            "title": "-",
+            "mainBrand": {
+              "src": "",
+              "alt": ""
+            }
+          }
+      )
+    }
+  );
+
+  $comparisonLines := $map(
+    $config.comparisons,
+    function($comparison) {
+      {
+        "title": $comparison.title,
+        "data": $map(
+          $keys,
+          function($key) {
+            (
+              $item := $lookup($dataByKey, $key);
+              $not($exists($item))
+                ? { "value": "-" }
+                : (
+                  $item.rnk = $firstRnk
+                    ? { "value": "" }
+                    : (
+                      $rawValue := $lookup($item, $comparison.value_attribute);
+                      $rawValue = null or $rawValue = "-" or $not($exists($rawValue))
+                        ? { "value": "-" }
+                        : {
+                            "value": $formatValue($rawValue),
+                            "measure": $comparisonLineMeasure($item, $comparison),
+                            "trend": $getColorUpDown($rawValue, "positive", "negative")
+                          }
+                    )
+                )
+            )
+          }
+        )
+      }
+    }
+  );
+
+  $empty
+    ? { "empty": true }
+    : {
+      "period": $data[0].filter_period_type,
+      "values": [$datasetData],
+      "formattedData": [[$formattedData]],
+      "labels": $responseLabels,
+      "brandsAvatar": { "data": $labelsAvatar },
+      "comparisonLine": { "data": $comparisonLines },
+      "legend": $config.legend
+    }
+)

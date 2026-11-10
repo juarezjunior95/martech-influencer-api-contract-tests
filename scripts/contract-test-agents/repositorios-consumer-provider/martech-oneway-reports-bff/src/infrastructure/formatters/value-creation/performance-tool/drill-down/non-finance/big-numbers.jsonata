@@ -1,0 +1,65 @@
+/**
+ * 🔢 PERFORMANCE-TOOL BIG NUMBERS FORMATTER
+ * 🎯 Component: Performance-tool Big Numbers
+ * 📍 Used on: Value-creation > Performance-tool > Drill-down > Non-finance > Big Numbers
+ * 🔄 Input: value-creation_performance-tool_drill-down_non-finance_overtime-performance
+ * 📤 Output: BigNumberData interface
+ */
+(
+  $source := $exists(data) ? data : ($exists(datasources) ? $lookup(datasources, $keys(datasources)[0]) : []);
+  
+  $ytdItem := $source[$contains(period_type, "YTD")];
+  $qtdItem := $source[$contains(period_type, "QTD")];
+
+  $cfg := {
+    "comparisonLabel": "vs",
+    "directions": { "up": "positive", "down": "negative" }
+  };
+
+  $isValidNumber := function($value) { $exists($value) and $type($value) = "number" };
+  $formatValue := function($value) { $isValidNumber($value) ? $formatNumber($value, "#,##0.0") : "-" };
+
+  $emptyCard := function($title) {
+    {
+      "header": {
+        "title": $title,
+        "measure": ""
+      },
+      "data": []
+    }
+  };
+
+  $populatedCard := function($item, $title) {
+    (
+        $trend := $lookup($cfg.directions, $item.variation_direction_vs_ly);
+        {
+          "header": {
+            "title": $title,
+            "measure": "[ " & $item.value_measure & " ]"
+          },
+          "data": [
+            {
+              "bigNumber": {
+                "value": $formatValue($item.variation_vs_ly),
+                "measure": $item.comp_unit_of_measure,
+                "trend": $trend
+              },
+              "secondaryInfo": {
+                "value": $formatValue($item.value),
+                "label": "[ " & $item.value_measure & " ]"
+              },
+              "comparison": {
+                "label": $cfg.comparisonLabel,
+                "value": "LY"
+              }
+            }
+          ]
+        }
+      )
+  };
+  
+  [
+    $exists($ytdItem) ? $populatedCard($ytdItem, "Power YTD") : $emptyCard("Power YTD"),
+    $exists($qtdItem) ? $populatedCard($qtdItem, "Power LQ") : $emptyCard("Power LQ")
+  ]
+)

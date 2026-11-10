@@ -1,0 +1,104 @@
+(
+  /**
+   * 🎯 Component: Megabrands QWOA Table (by country)
+   * 📍 Used on: Resource Allocation Media > Overview
+   * 🔄 Input: connections-and-creativity_resource-allocation-media_overview_megabrands-qwoa-media-qwoa-table
+   * 📤 Output: megabrands { header, rows }
+   * 🔧 Config: color_ly_up, color_ly_down, header, unit_measure
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "color_ly_up": "#49764B",
+    "color_ly_down": "#A20A0A",
+    "header": {
+      "countries_title": "Countries",
+      "ly_title": "vs LY",
+      "vs_guideline_title": "vs Guideline",
+      "ac_suffix": " AC",
+      "le_suffix": " LE"
+    },
+    "tag": {
+      "positive": { "color": "#49764B", "backgroundColor": "#E6F9E6" },
+      "negative": { "color": "#A20A0A", "backgroundColor": "#FFE6E6" }
+    }
+  };
+  
+  $countryMap := $getCountryMap();
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $dsKey := $keys($datasources)[0];
+  $ds := $lookup($datasources, $dsKey);
+  $data := $exists($ds.data) ? $ds.data : ($exists($ds) and $type($ds) = "array" ? $ds : []);
+
+  $firstRow := $count($data) > 0 ? $data[0] : {};
+  $hasBrands := $count($data[raw_brand != "N/A"]) > 0;
+  $lyLabel := $exists($firstRow.lyMonthLabel) ? $firstRow.lyMonthLabel : $formatDateToMonth($string($firstRow.dt_ini));
+  $lyShortYear := $contains($lyLabel, "'") ? $split($lyLabel, "'")[1] : "";
+  $currLabel := $exists($firstRow.refreshMonthLabel) ? $firstRow.refreshMonthLabel : $formatDateToMonth($string($firstRow.dt_end));
+  $currShortYear := $contains($currLabel, "'") ? $split($currLabel, "'")[1] : "";
+
+  $header := [
+    $hasBrands ? { "id": "brands", "title": "Brands" } : { "id": "countries", "title": "Countries" },
+    { "id": "previous_year_AC", "title": $lyShortYear & $config.header.ac_suffix },
+    { "id": "current_year_LE", "title": $currShortYear & $config.header.le_suffix },
+    { "id": "ly", "title": $config.header.ly_title },
+    { "id": "vs_guideline", "title": $config.header.vs_guideline_title }
+  ];
+
+  $roundToStr := function($val) {
+    $exists($val) and $type($val) = "number" ? $string($round($val)) : "-"
+  };
+
+  $buildTag := function($val) {
+    (
+      $numVal := $exists($val) and $type($val) = "number" ? $val : null;
+      $isPositive := $numVal != null and $numVal > 0;
+      $tagStyle := $isPositive ? $config.tag.positive : $config.tag.negative;
+      $numVal != null
+        ? { "tag": { "value": $numVal, "color": $tagStyle.color, "backgroundColor": $tagStyle.backgroundColor } }
+        : { "tag": { "value": "-", "color": $config.tag.negative.color, "backgroundColor": $config.tag.negative.backgroundColor } }
+    )
+  };
+
+  $rowToCell := function($row) {
+    (
+      $hasAcVsLy := $exists($row.ac_vs_ly) and $type($row.ac_vs_ly) = "number";
+      $lyDirection := $hasAcVsLy and $row.ac_vs_ly > 0
+        ? $config.color_ly_up
+        : $config.color_ly_down;
+      $lyCell := $hasAcVsLy
+        ? {
+            "value": $formatValue($row.ac_vs_ly),
+            "unitMeasure": "",
+            "variationDirection": $lyDirection
+          }
+        : { "value": "-", "unitMeasure": "", "variationDirection": $config.color_ly_down };
+      $merge([
+        $row.raw_brand = "N/A"
+          ? { "countries": { "value": $lookup($countryMap, $row.country_iso_code_3) ?: $row.country_iso_code_3 } }
+          : { "brands": { "value": $row.raw_brand } },
+        {
+          "previous_year_AC": { "value": $roundToStr($row.ly), "unitMeasure": "" },
+          "current_year_LE": { "value": $roundToStr($row.ac), "unitMeasure": "" },
+          "ly": $lyCell,
+          "vs_guideline": $buildTag($row.vs_guideline)
+        }
+      ])
+    )
+  };
+
+  $count($data) = 0
+    ? { "megabrands": { "empty": true } }
+    : (
+      $rows := [ [ $map($data, $rowToCell) ], [] ];
+
+      {
+        "megabrands": {
+          "header": $header,
+          "rows": $rows
+        }
+      }
+    )
+)

@@ -1,0 +1,153 @@
+/**
+ * 🔢 PARTICIPATION GLOBAL BRANDS FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: Category > POS Book > Lead the Category > Global > Participation Global Brands
+ * 🔄 Input: category_pos-book_lead-the-category_global_participation-global-brands data
+ * 📤 Output: Global brands participation table with header and rows grouped by maturity
+ * 🔧 Config: Cores fixas por brand, headers dinâmicos com imagem
+ */
+
+(
+  $dsKey := $keys(datasources)[0];
+  $data := $lookup(datasources, $dsKey);
+  $isEmpty := $count($data) = 0;
+
+  $chartUnitMeasure := "%";
+  $variationMeasure := "pp";
+
+  $distinctBrands := $distinct($data.raw_brand);
+
+  $brandToId := function($brand) {
+    $lowercase($replace($brand, " ", "_"))
+  };
+
+  $formatBrandName := function($brand) {
+    $join(
+      $map($split($lowercase($brand), " "), function($word) {
+        $uppercase($substring($word, 0, 1)) & $substring($word, 1)
+      }),
+      " "
+    )
+  };
+
+  $getBrandColor := function($brandId) {
+    $brandId = "corona" ? "#F0DF78" :
+    $brandId = "heineken" ? "#A1E3BC" :
+    $brandId = "budweiser" ? "#F6B7D0" :
+    $brandId = "michelob_ultra" ? "#A1CFF4" :
+    $brandId = "stella_artois" ? "#EEC879" :
+    "#C9D1D6"
+  };
+
+  $getChartScaleMax := function($brandName) {
+    $max($filter($data, function($item) { $item.raw_brand = $brandName }).ac)
+  };
+
+  $getBrandImage := function($brandName) {
+    $filter($data, function($item) { $item.raw_brand = $brandName })[0].brand.imageTable
+  };
+
+  $maturityOrder := ["N/A", "M3", "M2", "M1"];
+  $distinctMaturities := $distinct($data.maturity);
+  $sortedMaturities := $filter($maturityOrder, function($maturity) {
+    $count($filter($distinctMaturities, function($m) { $m = $maturity })) > 0
+  });
+
+  $buildHeader := function() {
+    $append(
+      [
+        {
+          "title": "Label",
+          "children": [
+            { "id": "label", "title": "Label" },
+            { "id": "country", "title": "Country" }
+          ]
+        }
+      ],
+      $map($distinctBrands, function($brand) {
+        (
+          $brandId := $brandToId($brand);
+          $brandImage := $getBrandImage($brand);
+          {
+            "id": $brandId,
+            "title": $brandImage,
+            "brandImg": true,
+            "imgName": $formatBrandName($brand)
+          }
+        )
+      })
+    )
+  };
+
+  $buildBrandData := function($countryData, $brandName) {
+    (
+      $brandId := $brandToId($brandName);
+      $item := $filter($countryData, function($row) { $row.raw_brand = $brandName })[0];
+      $chartScaleMax := $getChartScaleMax($brandName);
+      $color := $getBrandColor($brandId);
+      
+      $item ? {
+        "chartData": {
+          "data": [$formatValue($item.ac)],
+          "backgroundColor": [$color],
+          "chartUnitMeasure": $chartUnitMeasure
+        },
+        "variation": $formatValue($item.ac_vs_ly),
+        "variationMeasure": $variationMeasure,
+        "chartScaleMax": $chartScaleMax
+      } : {
+        "chartData": {
+          "data": [],
+          "backgroundColor": [$color],
+          "chartUnitMeasure": $chartUnitMeasure
+        },
+        "variationMeasure": "",
+        "chartScaleMax": $chartScaleMax
+      }
+    )
+  };
+
+  $buildRow := function($countryData, $labelValue, $countryValue) {
+    $merge([
+      {
+        "label": { "value": $labelValue },
+        "country": { "value": $countryValue }
+      },
+      $merge($map($distinctBrands, function($brand) {
+        { ($brandToId($brand)): $buildBrandData($countryData, $brand) }
+      }))
+    ])
+  };
+
+  $buildRows := function() {
+    $map($sortedMaturities, function($maturity) {
+      (
+        $maturityData := $filter($data, function($item) { $item.maturity = $maturity });
+        $distinctCountries := $distinct($maturityData.country_iso_code_3);
+        
+        $map($distinctCountries, function($country) {
+          (
+            $countryData := $filter($maturityData, function($item) { 
+              $item.country_iso_code_3 = $country 
+            });
+            
+            $labelValue := $maturity = "N/A" ? " " : $maturity;
+            
+            $countryValue := $country = "ABI" ? "Global" : $country;
+            
+            $buildRow($countryData, $labelValue, $countryValue)
+          )
+        })
+      )
+    })
+  };
+
+  $isEmpty ? {
+    "empty": true,
+    "header": [],
+    "rows": []
+  } : {
+    "header": $buildHeader(),
+    "rows": $buildRows()
+  }
+)

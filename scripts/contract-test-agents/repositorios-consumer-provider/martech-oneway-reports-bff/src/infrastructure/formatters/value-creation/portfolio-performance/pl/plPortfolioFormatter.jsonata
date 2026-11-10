@@ -1,0 +1,196 @@
+(
+  /* ===============================
+     Datas base e variáveis globais
+     =============================== */
+  $dt := datasources.`value-creation_portfolio-performance_pl_portfolio`[0].dt_ini;
+  $yearNum := $number($substring($dt, 0, 4));
+  $lastYear := $yearNum - 1;
+  $group1 := ["Total Volume"];
+  $group2 := ["S&M"];
+  $group3 := ["VILC"];
+  $group4 := ["NR/hl", "VIC/hl", "VLC/hl", "MACO/hl", "CORES/hl", "VILC/hl"];
+  $group5 := ["MACO Margin", "S&M as % of NR", "CORES Margin", "S&M as % of MACO"];
+  $ppKpis := ["MACO Margin", "S&M as % of NR", "CORES Margin", "S&M as % of MACO"];
+  $exciseLabel := "Excise duty " & "$" & " eco taxes";
+  /* ===============================
+     Mapa legível de KPIs filhos
+     =============================== */
+  $getKpiChildren := function($kpiTitle) {
+    (
+      $kpiMap := {
+        "Total Volume": ["Gross Turnover", $exciseLabel, "Discounts", "NET REVENUE", "MACO", "CORES"],
+        "NET REVENUE": ["VIC", "VLC"],
+        "MACO": ["Marketing Costs", "Sales Costs"]
+      };
+      $children := $lookup($kpiMap, $kpiTitle);
+      $exists($children) ? $children : []
+    )
+  };
+  /* ===============================
+     Agrupamento por grupo de KPIs
+     =============================== */
+  $getGroup := function($groupArray) {
+    $filter(
+      datasources.`value-creation_portfolio-performance_pl_portfolio`,
+      function($k) {
+        (
+          $kpiTitleStr := $string($k.kpi_title);
+          $exists($k.kpi_title) and $count($filter($groupArray, function($item) { $item = $kpiTitleStr })) > 0
+        )
+      }
+    )
+  };
+  /* ===============================
+     Mapeamento de KPI → rows
+     =============================== */
+  $mapKpi := function($kpi) {
+    (
+      $kpiTitle := $string($kpi.kpi_title);
+      $childrenKpis := $getKpiChildren($kpiTitle);
+      $hasChildren := $count($childrenKpis) > 0;
+      $isPp := $count($filter($ppKpis, function($k) { $k = $kpiTitle })) > 0;
+      $growthUnit := $isPp ? "pp" : "%";
+      $vsMioUnit := $isPp ? "%" : undefined;
+
+      $baseRow := {
+        "kpi_mio_khl": { "value": $kpiTitle, "unitMeasure": $string($kpi.unitMeasure) },
+        "tt_abi_ac": { "value": $kpi.ac, "unitMeasure": $vsMioUnit },
+        "tt_abi_og_vs_ly": { "value": $kpi.og_vs_ly, "unitMeasure": $growthUnit, "variationDirection": $kpi.comp_og_vs_ly_direction },
+
+        "megabrands_ac": { "value": $kpi.megabrands_ac, "unitMeasure": $vsMioUnit },
+        "megabrands_og_vs_ly": { "value": $kpi.megabrands_og_vs_ly, "unitMeasure": $growthUnit, "variationDirection": $kpi.megabrands_direction },
+
+        "expansion_ac": { "value": $kpi.expansion_ac, "unitMeasure": $vsMioUnit },
+        "expansion_og_vs_ly": { "value": $kpi.expansion_og_vs_ly, "unitMeasure": $growthUnit, "variationDirection": $kpi.expansion_direction },
+
+        "sustain_ac": { "value": $kpi.sustain_ac, "unitMeasure": $vsMioUnit },
+        "sustain_og_vs_ly": { "value": $kpi.sustain_og_vs_ly, "unitMeasure": $growthUnit, "variationDirection": $kpi.sustain_direction },
+
+        "tail_ac": { "value": $kpi.tail_ac, "unitMeasure": $vsMioUnit },
+        "tail_og_vs_ly": { "value": $kpi.tail_og_vs_ly, "unitMeasure": $growthUnit, "variationDirection": $kpi.tail_direction }
+      };
+      $hasChildren
+        ? (
+          $childrenRows := $filter(
+            $map(
+              $childrenKpis,
+              function($childKpiTitle) {
+                (
+                  $childKpi := $filter(
+                    datasources.`value-creation_portfolio-performance_pl_portfolio`,
+                    function($k) { $string($k.kpi_title) = $childKpiTitle }
+                  )[0];
+                  $exists($childKpi)
+                    ? $mapKpi($childKpi)
+                    : null
+                )
+              }
+            ),
+            function($row) { $exists($row) }
+          );
+          $flattenedChildren := $reduce($childrenRows, function($acc, $childRows) { $append($acc, $childRows) }, []);
+          $append([$baseRow], $flattenedChildren)
+        )
+        : [$baseRow]
+    )
+  };
+  /* ===============================
+     Criação final das rows
+     =============================== */
+  $createGroupArray := function($groupArray) {
+    (
+      $groupKpis := $getGroup($groupArray);
+      $reduce($groupKpis, function($acc, $kpi) { $append($acc, $mapKpi($kpi)) }, [])
+    )
+  };
+  $createGroupArrayWithHeader := function(
+    $groupArray,
+    $headerRow
+  ) {
+    (
+      $rows := $createGroupArray($groupArray);
+      $append([$headerRow], $rows)
+    )
+  };
+  $kpisHlHeaderRow := {
+    "kpi_mio_khl": { "unitMeasure": "", "value": "KPI's/hL" },
+    "tt_abi_ac": { "value": "" },
+    "tt_abi_og_vs_ly": { "value": "" },
+    "megabrands_ac": { "value": "" },
+    "megabrands_og_vs_ly": { "value": "" },
+    "expansion_ac": { "value": "" },
+    "expansion_og_vs_ly": { "value": "" },
+    "sustain_ac": { "value": "" },
+    "sustain_og_vs_ly": { "value": "" },
+    "tail_ac": { "value": "" },
+    "tail_og_vs_ly": { "value": "" }
+  };
+  $kpisHlHeaderOtherKpisRow := {
+    "kpi_mio_khl": { "unitMeasure": "", "value": "Other KPI'S" },
+    "tt_abi_ac": { "value": "" },
+    "tt_abi_og_vs_ly": { "value": "" },
+    "megabrands_ac": { "value": "" },
+    "megabrands_og_vs_ly": { "value": "" },
+    "expansion_ac": { "value": "" },
+    "expansion_og_vs_ly": { "value": "" },
+    "sustain_ac": { "value": "" },
+    "sustain_og_vs_ly": { "value": "" },
+    "tail_ac": { "value": "" },
+    "tail_og_vs_ly": { "value": "" }
+  };
+  /* ===============================
+     Output final
+     =============================== */
+  {
+    "header": [
+        {
+          "title": "KPI",
+          "children": [
+            { "id": "kpi_mio_khl", "title": '[$Mio] and [k hl]' }
+          ]
+        },
+        {
+          "title": "TT ABI (BEER + ADJ)",
+          "children": [
+            { "id": "tt_abi_ac", "title": "AC" },
+            { "id": "tt_abi_og_vs_ly", "title": "OG vs LY [%]" }
+          ]
+        },
+        {
+          "title": "Megabrands",
+          "children": [
+            { "id": "megabrands_ac", "title": "AC" },
+            { "id": "megabrands_og_vs_ly", "title": "OG vs LY [%]" }
+          ]
+        },
+        {
+          "title": "Expansion",
+          "children": [
+            { "id": "expansion_ac", "title": "AC" },
+            { "id": "expansion_og_vs_ly", "title": "OG vs LY [%]" }
+          ]
+        },
+        {
+          "title": "Sustain",
+          "children": [
+            { "id": "sustain_ac", "title": "AC" },
+            { "id": "sustain_og_vs_ly", "title": "OG vs LY [%]" }
+          ]
+        },
+        {
+          "title": "Tail",
+          "children": [
+            { "id": "tail_ac", "title": "AC" },
+            { "id": "tail_og_vs_ly", "title": "OG vs LY [%]" }
+          ]
+        }
+      ],
+    "rows": [
+      [$createGroupArray($group1)],
+      [$createGroupArray($group2)],
+      [$createGroupArray($group3)],
+      [$createGroupArrayWithHeader($group4, $kpisHlHeaderRow)],
+      [$createGroupArrayWithHeader($group5, $kpisHlHeaderOtherKpisRow)]
+    ]
+  }
+)

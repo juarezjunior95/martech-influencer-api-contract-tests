@@ -1,0 +1,135 @@
+/* *
+ * 🏆 GROWTH LEAGUE RANKINGS SUPER LEAGUE FORMATTER
+ * 🎯 Component: Super League Rankings
+ * 📍 Used on: Growth League > Rankings > Super League
+ * 🔄 Input: value-creation_growth-league_rankings_super-league data (long format: one row per country per KPI)
+ * 📤 Output: Table format with resolved header subtitles and pivoted rows */
+(
+  $data := $.datasources."value-creation_growth-league_rankings_super-league";
+
+  $getSubtitle := function($kpiId, $format) {(
+    $item := $filter($data, function($d) { $d.kpi_variation = $kpiId })[0];
+    $exists($item) ? (
+      $format = "formatQuarter"
+        ? $formatDateToQuarter($item.dt_end)
+        : $formatPeriod($item.dt_end)
+    ) : undefined
+  )};
+
+  $getCountryKey := function($row) {
+    $exists($row.country_iso_code_3)
+      ? $row.country_iso_code_3
+      : ($type($row.country) = "string" ? $row.country : "")
+  };
+
+  $header := [
+    {
+      "title": "Leaderboard",
+      "children": [
+        {"id": "rank", "title": "Rank"},
+        {"id": "country", "title": "Country"}
+      ]
+    },
+    {
+      "title": "Total",
+      "children": [
+        {"id": "overall_result", "title": "% of Achievement", "subtitle": $getSubtitle("overall_result", "formatDate")}
+      ]
+    },
+    {
+      "title": "Hero",
+      "children": [
+        {"id": "total_abi_volume", "title": "Total ABI Volume", "subtitle": $getSubtitle("total_abi_volume", "formatDate")},
+        {"id": "beer_share", "title": "Beer Share", "subtitle": $getSubtitle("beer_share", "formatDate")},
+        {"id": "cashflow", "title": "Cashflow", "subtitle": $getSubtitle("cashflow", "formatDate")},
+        {"id": "brand_power", "title": "Brand Power", "subtitle": $getSubtitle("brand_power", "formatQuarter")}
+      ]
+    },
+    {
+      "title": "Enabler",
+      "children": [
+        {"id": "bees_dashboard", "title": "BEES Dashboard", "subtitle": $getSubtitle("bees_dashboard", "formatDate")},
+        {"id": "mega_brands_dashboard", "title": "Megabrands Dashboard", "subtitle": $getSubtitle("mega_brands_dashboard", "formatDate")},
+        {"id": "channel_dashboard", "title": "Key Accounts Dashboard", "subtitle": $getSubtitle("channel_dashboard", "formatDate")}
+      ]
+    },
+    {
+      "title": "Performance",
+      "children": [
+        {"id": "participation", "title": "Participation LDA+", "subtitle": $getSubtitle("participation", "formatDate")},
+        {"id": "engagement", "title": "Engagement", "subtitle": $getSubtitle("engagement", "formatDate")},
+        {"id": "dtc_dashboard", "title": "DTC Dashboard", "subtitle": $getSubtitle("dtc_dashboard", "formatDate")},
+        {"id": "portfolio_health_index", "title": "Portfolio Health Index", "subtitle": $getSubtitle("portfolio_health_index", "formatDate")},
+        {"id": "nps", "title": "NPS", "subtitle": $getSubtitle("nps", "formatDate")},
+        {"id": "corona_volume", "title": "Corona Volume", "subtitle": $getSubtitle("corona_volume", "formatDate")},
+        {"id": "beyond_beer_volume", "title": "Beyond Beer Volume", "subtitle": $getSubtitle("beyond_beer_volume", "formatDate")},
+        {"id": "non_alc_beer_volume", "title": "Non Alc Beer Volume", "subtitle": $getSubtitle("non_alc_beer_volume", "formatDate")},
+        {"id": "premium_sos", "title": "Premium SOS", "subtitle": $getSubtitle("premium_sos", "formatDate")},
+        {"id": "core_sos", "title": "Core SOS", "subtitle": $getSubtitle("core_sos", "formatDate")}
+      ]
+    }
+  ];
+
+  $kpiFieldIds := $reduce(
+    $filter($header, function($g) { $g.title != "Leaderboard" }),
+    function($acc, $g) {
+      $append($acc, $map($g.children, function($c) { $c.id }))
+    },
+    []
+  );
+
+  $countries := $distinct($map($data, function($row) { $getCountryKey($row) }));
+
+  $pivotedRows := $map($countries, function($countryName) {(
+    $countryRows := $append([], $filter($data, function($row) { $getCountryKey($row) = $countryName }));
+    $firstRow := $countryRows[0];
+    $flag := $exists($firstRow.country.imageIcon) ? $firstRow.country.imageIcon : $firstRow.country_images.imageIcon;
+
+    $kpiValues := $reduce($kpiFieldIds, function($acc, $fieldId) {
+      (
+        $matchingRow := $filter($countryRows, function($row) { $row.kpi_variation = $fieldId })[0];
+        $exists($matchingRow) ? (
+          $isKpiValid := $type($matchingRow.score) = "number";
+          $merge([$acc, {
+            ($fieldId): {
+              "unitMeasure": $isKpiValid ? "%" : "",
+              "value": $isKpiValid ? $matchingRow.score : "-"
+            }
+          }])
+        ) : $merge([$acc, {
+          ($fieldId): { "unitMeasure": "", "value": "-" }
+        }])
+      )
+    }, {});
+
+    $merge([
+      {
+        "rank": { "value": $string($firstRow.country_ranking) },
+        "country": { "value": $countryName, "img": $flag }
+      },
+      $kpiValues
+    ])
+  )});
+
+  $sortedRows := $sort($pivotedRows, function($a, $b) {
+    $number($a.rank.value) > $number($b.rank.value)
+  });
+
+  $splits := [
+    ["Leaderboard"],
+    ["Total"],
+    ["Hero"],
+    ["Enabler"],
+    ["Performance"]
+  ];
+
+  {
+    "kpiData": {
+      "table": {
+        "header": $header,
+        "rows": [[$sortedRows]],
+        "splits": $splits
+      }
+    }
+  }
+)

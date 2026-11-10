@@ -1,0 +1,141 @@
+/**
+ * 🔢 MANUFACTURE PARTICIPATION FORMATTER (COUNTRY)
+ * 🎯 Component: Table
+ * 📍 Used on: Category > POS Book > Lead the Category > Country > Manufacture Participation
+ * 🔄 Input: category_pos-book_lead-the-category_country_manufacture-participation data
+ * 📤 Output: Manufacture participation table with header and rows grouped by cohort (Overall, Gender, Age, Income)
+ */
+
+(
+  $dsKey := $keys(datasources)[0];
+  $data := $lookup(datasources, $dsKey);
+  $isEmpty := $count($data) = 0;
+
+  $chartUnitMeasure := "%";
+  $variationMeasure := "pp";
+
+  $distinctManufacturers := $distinct($data.manufacturer);
+
+  $toManufacturerId := function($index) {
+    "manufacturer_" & $string($index)
+  };
+
+  $getColor := function($manufacturer, $index) {
+    $contains($lowercase($manufacturer), "beer") ? "#C9D1D6" :
+    $contains($lowercase($manufacturer), "abi") ? "#F0DF78" :
+    $contains($lowercase($manufacturer), "heineken") ? "#A1E3BC" :
+    $contains($lowercase($manufacturer), "petropolis") ? "#A1CFF4" :
+    $contains($lowercase($manufacturer), "ccu") ? "#A1E3BC" :
+    $index = 0 ? "#C9D1D6" :
+    $index = 1 ? "#F0DF78" :
+    $index = 2 ? "#A1E3BC" :
+    "#A1CFF4"
+  };
+
+  $getChartScaleMax := function($manufacturer) {
+    (
+      $manufacturerData := $filter($data, function($item) { $item.manufacturer = $manufacturer });
+      $acValues := $manufacturerData.ac;
+      $maxAc := $max($acValues);
+      $maxAc > 0 ? $maxAc : 100
+    )
+  };
+
+  $buildManufacturerData := function($item, $manufacturer, $index) {
+    (
+      $chartScaleMax := $getChartScaleMax($manufacturer);
+      $item ? {
+        "chartScaleMax": $chartScaleMax,
+        "chartData": {
+          "data": [$formatValue($item.ac)],
+          "variation": $formatValue($item.ac_vs_ly),
+          "backgroundColor": $getColor($manufacturer, $index),
+          "chartUnitMeasure": $chartUnitMeasure
+        },
+        "variation": $formatValue($item.ac_vs_ly),
+        "variationMeasure": $variationMeasure
+      } : {
+        "chartScaleMax": $chartScaleMax,
+        "chartData": {
+          "data": ["0.0"],
+          "variation": "0.0",
+          "backgroundColor": $getColor($manufacturer, $index),
+          "chartUnitMeasure": $chartUnitMeasure
+        },
+        "variation": "0.0",
+        "variationMeasure": $variationMeasure
+      }
+    )
+  };
+
+  $buildRow := function($rowData, $typeLabel) {
+    $merge([
+      {
+        "label": {
+          "noChart": true,
+          "merge": true,
+          "value": $typeLabel
+        }
+      },
+      $merge($map($distinctManufacturers, function($manufacturer, $idx) {
+        (
+          $manufacturerId := $toManufacturerId($idx);
+          $manufacturerItem := $filter($rowData, function($item) { 
+            $item.manufacturer = $manufacturer 
+          })[0];
+          {
+            ($manufacturerId): $buildManufacturerData($manufacturerItem, $manufacturer, $idx)
+          }
+        )
+      }))
+    ])
+  };
+
+  $groups := [
+    { "items": ["Overall"] },
+    { "items": ["Male", "Female"] },
+    { "items": ["LDA - 24", "25-34", "35-44", "45-54", "55+"] },
+    { "items": ["High Income", "Medium Income", "Low Income"] }
+  ];
+
+  $buildRows := function() {
+    $map($groups, function($group) {
+      (
+        $groupItems := $group.items;
+
+        $map($groupItems, function($typeLabel) {
+          (
+            $rowData := $filter($data, function($item) { $item.type = $typeLabel });
+            
+            $count($rowData) > 0 
+              ? $buildRow($rowData, $typeLabel)
+              : null
+          )
+        })
+      )
+    })
+  };
+
+  $labelHeader := {
+    "title": "Label",
+    "children": [
+      { "id": "label", "title": "Label" }
+    ]
+  };
+
+  $manufacturerHeaders := $map($distinctManufacturers, function($manufacturer, $index) {
+    {
+      "id": $toManufacturerId($index),
+      "title": $manufacturer
+    }
+  });
+
+  $header := $append([$labelHeader], $manufacturerHeaders);
+
+  $isEmpty
+    ? { "empty": true }
+    : {
+        "header": $header,
+        "rows": $buildRows()
+      }
+)

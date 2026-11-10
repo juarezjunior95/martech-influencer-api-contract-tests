@@ -1,0 +1,101 @@
+/* 🔢 CONSUMER BEHAVIOR BIG NUMBERS FORMATTER
+ * 🎯 Component: Consumer Behavior (Beer Participation and ABI Participation)
+ * 📍 Used on: Category Home
+ * 🔄 Input: category_home_consumer-behavior datasource
+ * 📤 Output: Array of BigNumberCardData for the frontend */
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+
+  /* Helper functions */
+
+  /* Formats the quarter from a date (e.g.: "2024-12-31" -> "Q4'24") */
+  $formatQuarter := function($dateStr) {(
+    $exists($dateStr) and $dateStr != "" ? (
+      $month := $number($substring($dateStr, 5, 2));
+      $quarter := $ceil($month / 3);
+      $year := $substring($dateStr, 2, 2);
+      "Q" & $string($quarter) & "'" & $year
+    ) : undefined
+  )};
+
+  /* Formats the complete period (e.g.: "Q3'25 - R12M") */
+  $formatPeriod := function($dateStr, $timeperiod) {(
+    $quarter := $formatQuarter($dateStr);
+    $exists($quarter) and $exists($timeperiod) ? $quarter & " - " & $timeperiod : $quarter
+  )};
+
+  /* Calculates the previous year quarter */
+  $getPreviousYearQuarter := function($dateStr) {(
+    $exists($dateStr) and $dateStr != "" ? (
+      $month := $number($substring($dateStr, 5, 2));
+      $quarter := $ceil($month / 3);
+      $year := $number($substring($dateStr, 0, 4)) - 1;
+      $yearShort := $substring($string($year), 2, 2);
+      "Q" & $string($quarter) & "'" & $yearShort
+    ) : undefined
+  )};
+
+  /* Formats number with one decimal place and thousand separator */
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number"
+      ? $formatNumber($value, '#,##0.0')
+      : "-"
+  };
+
+  /* Formats the label with unit_of_measure in brackets */
+  $formatUnitLabel := function($unit) {
+    $exists($unit) and $unit != "" ? "[ " & $unit & " ]" : ""
+  };
+
+  /* Transforms direction (up/down/neutral) to trend (positive/negative) for frontend alignment */
+  $directionToTrend := function($direction) {(
+    $direction = "up" ? "positive" :
+    $direction = "down" ? "negative" :
+    undefined
+  )};
+
+  /* Gets the comparison value based on card type */
+  $getComparisonValue := function($cardView, $dateStr) {(
+    $cardView = "BEER_PARTICIPATION" 
+      ? "LY" 
+      : $getPreviousYearQuarter($dateStr)
+  )};
+
+  /* Transforms an item into a card */
+  $transformItem := function($item) {(
+    {
+      "title": $item.kpi_name,
+      "period": $formatPeriod($item.dt_end, $item.period),
+      "bigNumberData": [
+        {
+          "bigNumber": {
+            "value": $formatValue($item.ac_vs_ly),
+            "measure": $item.measure,
+            "trend": $directionToTrend($item.variationDirectionVsLy)
+          },
+          "comparison": {
+            "label": "vs",
+            "value": $getComparisonValue($item.card_view, $item.dt_end)
+          },
+          "secondaryInfo": {
+            "label": $formatUnitLabel($item.unit_of_measure),
+            "value": $formatValue($item.ac)
+          }
+        }
+      ]
+    }
+  )};
+
+  $dataArray := $type($data) = "array" ? $data : $exists($data) ? [$data] : [];
+
+  $beerItem := $dataArray[card_view = "BEER_PARTICIPATION"];
+  $abiItem := $dataArray[card_view = "ABI_PARTICIPATION"];
+
+  $result := $append(
+    $exists($beerItem) ? [$transformItem($type($beerItem) = "array" ? $beerItem[0] : $beerItem)] : [],
+    $exists($abiItem) ? [$transformItem($type($abiItem) = "array" ? $abiItem[0] : $abiItem)] : []
+  );
+
+  $result
+)

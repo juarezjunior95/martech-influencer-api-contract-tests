@@ -1,0 +1,276 @@
+/**
+ * 🎯 Brand Power Book — Performance trend (by year / AC)
+ * 📍 View: portfolio-brand_brand-power-book_performance-trend_by-year-power-ac_trend-over-time
+ * 🔄 Input: by-trend-over-time, by-year-power-ac, year-by-year-power-ac-power-mix, by-trend-over-time-power-mix
+ * 📤 Output: { trendOverTime, yearPowerVsAc, legend }
+ */
+(
+  $trendKey := "portfolio-brand_brand-power-book_overview_power-performance-trend_by-trend-over-time";
+  $yearlyKey := "portfolio-brand_brand-power-book_overview_power-performance-trend_by-year-power-ac";
+  $yearMixKey := "portfolio-brand_brand-power-book_overview_power-performance-trend_year-by-year-power-ac-power-mix";
+  $quarterMixKey := "portfolio-brand_brand-power-book_overview_power-performance-trend_by-trend-over-time-power-mix";
+
+  $config := {
+    "barColors": { "default": "#EDDAB1", "latest": "#D1A33C" },
+    "connector": {
+      "backgroundColor": { "up": "#E6F9E6", "down": "#FFE6E6" },
+      "textColor": { "up": "#007800", "down": "#BA0B0B" },
+      "measure": "pp"
+    },
+    "trendMixCaption": { "title": " ", "unit_of_measure": "%", "valueColor": "#1414148F" },
+    "yearMixCaption": {
+      "title": "Mix of Total Power",
+      "subtitle": "%",
+      "unit_of_measure": "%",
+      "valueColor": "#1414148F"
+    }
+  };
+
+  $safeArray := function($maybe) {
+    $exists($maybe) and $type($maybe) = "array" ? $maybe : []
+  };
+
+  $isValidNumber := function($value) { $type($value) = "number" };
+
+  $mixField := function($row) {
+    $exists($row.value) and $row.value != null ? $row.value : $row.ac
+  };
+
+  $quarterLabelFromRow := function($row) {
+    (
+      $endIso := $exists($row.dt_end) and $row.dt_end != null ? $row.dt_end : $row.dt_ini;
+      $month := $number($fromMillis($toMillis($endIso), "[M01]"));
+      $yearFull := $fromMillis($toMillis($endIso), "[Y0001]");
+      $quarter := $month <= 3 ? 1 : $month <= 6 ? 2 : $month <= 9 ? 3 : 4;
+      $yy := $substring($string($yearFull), 2, 2);
+      "Q" & $quarter & "'" & $yy
+    )
+  };
+
+  $yearLabelFromRow := function($row) {
+    (
+      $exists($row.dt_end) and $row.dt_end != null
+        ? (
+            $endMonth := $number($fromMillis($toMillis($row.dt_end), "[M01]"));
+            $endQuarter := $endMonth <= 3 ? 1 : $endMonth <= 6 ? 2 : $endMonth <= 9 ? 3 : 4;
+            $yy := $substring($fromMillis($toMillis($row.dt_ini), "[Y0001]"), 2, 2);
+            $endQuarter = 4 ? "FY'" & $yy : "Q" & $endQuarter & "'" & $yy
+          )
+        : (
+            $yy := $substring($fromMillis($toMillis($row.dt_ini), "[Y0001]"), 2, 2);
+            "FY'" & $yy
+          )
+    )
+  };
+
+  $trendRows := $safeArray($lookup(datasources, $trendKey));
+  $yearRows := $safeArray($lookup(datasources, $yearlyKey));
+  $yearMixRows := $safeArray($lookup(datasources, $yearMixKey));
+  $quarterMixRows := $safeArray($lookup(datasources, $quarterMixKey));
+
+  $sortedTrend := $sort($trendRows, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+  $sortedYear := $sort($yearRows, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+  $sortedQuarterMix := $sort($quarterMixRows, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+  $sortedYearMix := $sort($yearMixRows, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+
+  $quarterMixResolved := $map($sortedTrend, function($trendRow, $index) {
+    (
+      $byDate := $quarterMixRows[dt_ini = $trendRow.dt_ini][0];
+      $exists($byDate)
+        ? $mixField($byDate)
+        : (
+            $count($sortedQuarterMix) = $count($sortedTrend) and $index < $count($sortedQuarterMix)
+              ? $mixField($sortedQuarterMix[$index])
+              : null
+          )
+    )
+  });
+
+  $yearMixResolved := $map($sortedYear, function($yearRow, $index) {
+    (
+      $byDate := $yearMixRows[dt_ini = $yearRow.dt_ini][0];
+      $exists($byDate)
+        ? $mixField($byDate)
+        : (
+            $count($sortedYearMix) = $count($sortedYear) and $index < $count($sortedYearMix)
+              ? $mixField($sortedYearMix[$index])
+              : null
+          )
+    )
+  });
+
+  $lastTrendIdx := $count($sortedTrend) - 1;
+  $lastYearIdx := $count($sortedYear) - 1;
+
+  $shouldAppendPartialFy := (
+    $count($sortedTrend) > 0 and $count($sortedYear) > 0
+      ? (
+          $lq := $sortedTrend[$lastTrendIdx];
+          $lastTrendYear := $number($fromMillis($toMillis($lq.dt_ini), "[Y0001]"));
+          $lastTrendMonth := $number($fromMillis($toMillis($lq.dt_ini), "[M01]"));
+          $lastYearInSeries := $number($fromMillis($toMillis($sortedYear[$lastYearIdx].dt_ini), "[Y0001]"));
+          $lastTrendMonth >= 1 and $lastTrendMonth <= 3 and $lastTrendYear > $lastYearInSeries
+        )
+      : false
+  );
+
+  $trendBarValues := $map($sortedTrend, function($row, $index) {
+    (
+      $mixVal := $quarterMixResolved[$index];
+      $exists($mixVal) and $isValidNumber($mixVal)
+        ? $round($row.ac * $mixVal / 100, 1)
+        : $row.ac
+    )
+  });
+
+  $distinctBarsAsc := $sort($distinct($trendBarValues), function($a, $b) { $a > $b });
+
+  $trendOverTimeBlock := $count($sortedTrend) = 0
+    ? null
+    : $merge([
+        {
+          "min": $count($distinctBarsAsc) > 1 and $distinctBarsAsc[0] = 0
+            ? $distinctBarsAsc[1]
+            : $distinctBarsAsc[0],
+          "max": $max($trendBarValues),
+          "values": $append([], $trendBarValues),
+          "labels": $append([], $map($sortedTrend, function($row) { $quarterLabelFromRow($row) })),
+          "backgroundColor": $append([], $map(
+            $sortedTrend,
+            function($row, $index) {
+              $index = $lastTrendIdx ? $config.barColors.latest : $config.barColors.default
+            }
+          )),
+          "variationCaptions": $count($sortedQuarterMix) = 0 and $count($quarterMixRows) = 0
+            ? []
+            : [
+                {
+                  "title": $config.trendMixCaption.title,
+                  "data": $append([], $map($quarterMixResolved, function($mixVal) {
+                    {
+                      "value": $mixVal,
+                      "unit_of_measure": $config.trendMixCaption.unit_of_measure,
+                      "color": $config.trendMixCaption.valueColor
+                    }
+                  }))
+                }
+              ]
+        },
+        $count($sortedTrend) >= 5 and $exists($sortedTrend[$lastTrendIdx])
+          ? {
+              "connector": {
+                "from": $quarterLabelFromRow($sortedTrend[$lastTrendIdx - 4]),
+                "to": $quarterLabelFromRow($sortedTrend[$lastTrendIdx]),
+                "value": $sortedTrend[$lastTrendIdx].ac_vs_ly,
+                "backgroundColor": $lookup(
+                  $config.connector.backgroundColor,
+                  $sortedTrend[$lastTrendIdx].variationDirectionVsLy
+                ),
+                "textColor": $lookup(
+                  $config.connector.textColor,
+                  $sortedTrend[$lastTrendIdx].variationDirectionVsLy
+                ),
+                "measure": $config.connector.measure
+              }
+            }
+          : { "connector": null }
+      ]);
+
+  $yearPowerValuesBase := $map($sortedYear, function($row, $index) {
+    (
+      $mixVal := $yearMixResolved[$index];
+      $exists($mixVal) and $isValidNumber($mixVal)
+        ? $round($row.ac * $mixVal / 100, 1)
+        : $row.ac
+    )
+  });
+
+  $yearPowerMixForCaption := $shouldAppendPartialFy
+    ? $append($yearMixResolved, $quarterMixResolved[$lastTrendIdx])
+    : $yearMixResolved;
+
+  $yearPowerLabels := $shouldAppendPartialFy
+    ? $append(
+        $map($sortedYear, function($row) { $yearLabelFromRow($row) }),
+        $quarterLabelFromRow($sortedTrend[$lastTrendIdx])
+      )
+    : $map($sortedYear, function($row) { $yearLabelFromRow($row) });
+
+  $yearPowerValues := $shouldAppendPartialFy
+    ? $append($yearPowerValuesBase, $trendBarValues[$lastTrendIdx])
+    : $yearPowerValuesBase;
+
+  $yearPowerCount := $count($yearPowerLabels);
+  $yearPowerLastIdx := $yearPowerCount - 1;
+
+  $yearPowerBg := $map($yearPowerLabels, function($label, $index) {
+    $index = $yearPowerLastIdx ? $config.barColors.latest : $config.barColors.default
+  });
+
+  $yearPowerVariation := $count($sortedYearMix) = 0 and $count($yearMixRows) = 0 and $not($shouldAppendPartialFy)
+    ? []
+    : [
+        {
+          "title": $config.yearMixCaption.title,
+          "subtitle": $config.yearMixCaption.subtitle,
+          "data": $append([], $map($yearPowerMixForCaption, function($mixVal) {
+            {
+              "value": $mixVal,
+              "unit_of_measure": $config.yearMixCaption.unit_of_measure,
+              "color": $config.yearMixCaption.valueColor
+            }
+          }))
+        }
+      ];
+
+  $yearConnector := $yearPowerCount >= 2 and $exists($yearPowerLabels[$yearPowerLastIdx])
+    ? (
+        $lastPt := $shouldAppendPartialFy ? $sortedTrend[$lastTrendIdx] : $sortedYear[$lastYearIdx];
+        $isValidNumber($lastPt.ac_vs_ly)
+          ? {
+              "from": $yearPowerLabels[$yearPowerLastIdx - 1],
+              "to": $yearPowerLabels[$yearPowerLastIdx],
+              "value": $lastPt.ac_vs_ly,
+              "backgroundColor": $lookup(
+                $config.connector.backgroundColor,
+                $exists($lastPt.variationDirectionVsLy) ? $lastPt.variationDirectionVsLy : "up"
+              ),
+              "textColor": $lookup(
+                $config.connector.textColor,
+                $exists($lastPt.variationDirectionVsLy) ? $lastPt.variationDirectionVsLy : "up"
+              ),
+              "measure": $config.connector.measure
+            }
+          : null
+      )
+    : null;
+
+  $yearPowerVsAcBlock := $count($sortedYear) = 0
+    ? null
+    : {
+        "values": $append([], $yearPowerValues),
+        "labels": $append([], $yearPowerLabels),
+        "backgroundColor": $yearPowerBg,
+        "variationCaptions": $yearPowerVariation,
+        "connector": $yearConnector
+      };
+
+  $legendBlock := [
+    { "label": "Previous Year", "color": $config.barColors.default },
+    { "label": "Current Year", "color": $config.barColors.latest }
+  ];
+
+  {
+    "trendOverTime": $trendOverTimeBlock,
+    "yearPowerVsAc": $yearPowerVsAcBlock,
+    "legend": $legendBlock
+  }
+)

@@ -1,0 +1,52 @@
+(
+  $trend := $ensureArray(datasources.trend);
+  $snapshot := $ensureArray(datasources.snapshot);
+  $rows := $filter($trend, function($item, $index) { $index >= $count($trend) - 12 });
+  $lastRow := $count($rows) > 0 ? $rows[-1] : {};
+  $hasData := $count($rows) > 0;
+
+  $quarterLabel := function($item) {
+    (
+      $exists($item.quarter_label) ? $item.quarter_label :
+      ($exists($item.quarter) and $exists($item.year)
+        ? $item.quarter & "'" & ($item.year % 100)
+        : ($exists($item.dt_end) ? $formatDateToQuarter($item.dt_end) : "-"))
+    )
+  };
+
+  $base := {
+    "chartHeader": {
+      "title": "Brand Power",
+      "measure": ($count($rows) > 0 and $exists($rows[0].unit_of_measure)) ? $rows[0].unit_of_measure : "%",
+      "period": (
+        $count($snapshot) > 0 and $exists($snapshot[0].dt_end)
+          ? $formatPeriodChip($snapshot[0].dt_ini, $snapshot[0].dt_end, "LQ", true)
+          : $quarterLabel($lastRow)
+      )
+    },
+    "labels": [$map($rows, $quarterLabel)],
+    "series": [
+      {
+        "role": "actual",
+        "label": "AC (Actual)",
+        "values": [$map($rows, function($item) { $item.ac ? $item.ac : $item.value })],
+        "formattedValues": [$map($rows, function($item) { $formatValue($item.ac ? $item.ac : $item.value) })]
+      }
+    ],
+    "comparisonRows": [
+      {
+        "label": "LY",
+        "deltas": [$map($rows, function($item) {
+          {
+            "formatted": $formatPercentValue($item.ac_vs_ly, $item.comp_unit_of_measure ? $item.comp_unit_of_measure : "pp"),
+            "isPositive": $item.variation_direction_ly = "up"
+          }
+        })]
+      }
+    ]
+  };
+
+  $hasData
+    ? $base
+    : $merge([$base, { "noticeMessage": "Data not available" }])
+)

@@ -1,0 +1,134 @@
+(
+  $data := $ensureArray(datasources.bigNumbers);
+  $periods := ["YTD", "L3M", "MTD"];
+
+  $title := function($row) {
+    (
+      $key := $lowercase($string($row.kpi ? $row.kpi : $row.kpi_name));
+      $key = "nr" or $key = "net_revenue" or $key = "net-revenue" ? "Net Revenue" :
+      $key = "cores" ? "CORES" :
+      $key = "market_share" or $key = "market-share" ? "Market Share" :
+    "Volume"
+    )
+  };
+
+  $tone := function($value, $direction) {
+    ($not($exists($value)) or $value = null) ? "neutral" :
+    $exists($direction)
+      ? ($lowercase($direction) = "up" ? "positive" : "negative")
+      : ($value >= 0 ? "positive" : "negative")
+  };
+
+  $formatAbsolute := function($row) {
+    $formatValue($row.ac)
+  };
+
+  $formatDelta := function($row, $field) {
+    (
+      $unit := $row.comp_unit_of_measure ? $row.comp_unit_of_measure : "%";
+      $formatPercentValue($lookup($row, $field), $unit)
+    )
+  };
+
+  $formatPeriodSuffix := function($period) {
+    (
+      $normalized := $exists($period) ? $uppercase($period) : "";
+      $normalized = "YTD" or $normalized = "MTD" or $normalized = "L3M"
+        ? $normalized
+        : ""
+    )
+  };
+
+  $formatPeriodLabel := function($dtEnd, $period, $isQuarter) {
+    (
+      $exists($dtEnd) and $dtEnd != ""
+        ? (
+          $datePart := $isQuarter ? $formatDateToQuarter($dtEnd) : $formatDateToMonth($dtEnd);
+          $periodSuffix := $formatPeriodSuffix($period);
+          $periodSuffix != "" ? $datePart & " " & $periodSuffix : $datePart
+        )
+        : "-"
+    )
+  };
+
+  $formatPeriodRange := function($dtIni, $dtEnd) {
+    (
+      $exists($dtIni) and $dtIni != "" and $exists($dtEnd) and $dtEnd != ""
+        ? (
+          $start := $fromMillis($toMillis($dtIni), "[MNn,*-3]");
+          $end := $fromMillis($toMillis($dtEnd), "[MNn,*-3]'[Y01]");
+          $sameMonth := $fromMillis($toMillis($dtIni), "[Y01][M01]") = $fromMillis($toMillis($dtEnd), "[Y01][M01]");
+          $sameMonth ? $end : ($start & "-" & $end)
+        )
+        : "-"
+    )
+  };
+
+  $formatHeaderTag := function($row, $period, $isQuarter) {
+    (
+      $normalizedPeriod := $exists($period) ? $uppercase($period) : "";
+      $useRange := ($normalizedPeriod = "YTD" or $normalizedPeriod = "L3M") and $not($isQuarter);
+      $useRange
+        ? ($formatPeriodRange($row.dt_ini, $row.dt_end) & " " & $normalizedPeriod)
+        : $formatPeriodLabel($row.dt_end, $period, $isQuarter)
+    )
+  };
+
+  $chip := function($row, $period) {
+    $formatHeaderTag($row, $period, false)
+  };
+
+  $buildDeltas := function($row) {
+    (
+      $ly := {
+        "formattedValue": $formatDelta($row, "ac_vs_ly"),
+        "comparisonLabel": "LY",
+        "tone": $tone($row.ac_vs_ly, $row.variationDirectionVsLy)
+      };
+      $exists($row.ac_vs_bu)
+        ? [
+            $ly,
+            {
+              "formattedValue": $formatDelta($row, "ac_vs_bu"),
+              "comparisonLabel": "BU",
+              "tone": $tone($row.ac_vs_bu, $row.variationDirectionVsBu)
+            }
+          ]
+        : [$ly]
+    )
+  };
+
+  $firstRow := $count($data) > 0 ? $data[0] : {};
+  $hasData := $count($data) > 0;
+
+  $base := {
+    "chartHeader": {
+      "title": $title($firstRow),
+      "period": $exists($firstRow.dt_end) ? $formatDateToMonth($firstRow.dt_end) : "",
+      "periodChip": $exists($firstRow.period) ? $firstRow.period : ""
+    },
+    "cards": $map($periods, function($period) {
+      (
+        $row := $filter($data, function($item) { $uppercase($item.period) = $period })[0];
+        $exists($row)
+          ? {
+              "id": $lowercase($period),
+              "periodLabel": $period,
+              "periodChipLabel": $chip($row, $period),
+              "absoluteValue": $formatAbsolute($row),
+              "deltas": $buildDeltas($row)
+            }
+          : {
+              "id": $lowercase($period),
+              "periodLabel": $period,
+              "periodChipLabel": "",
+              "deltas": []
+            }
+      )
+    })
+  };
+
+  $hasData
+    ? $base
+    : $merge([$base, { "noticeMessage": "Data not available" }])
+)

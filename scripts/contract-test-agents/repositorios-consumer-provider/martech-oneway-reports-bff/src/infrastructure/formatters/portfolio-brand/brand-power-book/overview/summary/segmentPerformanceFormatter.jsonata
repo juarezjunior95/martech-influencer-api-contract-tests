@@ -1,0 +1,75 @@
+/**
+ * 🔢 SEGMENT PERFORMANCE FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: BrandPowerBook > Segment Performance table
+ * 🔄 Input: summary_power_segment data
+ * 📤 Output: TableData interface
+ * 🔧 Helpers: formatLyQuarter
+ */
+(
+  $ds := $keys($.datasources)[0];
+  $data := $lookup($.datasources, $ds);
+
+  $config := {
+    "variation": {
+      "unit_measure": "pp"
+    },
+    "direction": {
+      "up": "#49764B",
+      "down": "#A20A0A"
+    },
+    "legend": [
+      {
+        "label": "ABI",
+        "color": "#EDCD20",
+        "selected_color": "#EDDAB1"
+      },
+      {
+        "label": "Competitor",
+        "color": "#97ADBB",
+        "selected_color": "#D3E3EE"
+      }
+    ],
+    "labels": {
+      "tt_abi": "TT ABI"
+    }
+  };
+
+  $count($data) = 0
+    ? { "empty": true }
+    : {
+        "header": [
+          { "id": "id", "title": "" },
+          { "id": "ac", "title": "AC" },
+          { "id": "ly", "title": "vs " & $formatLyQuarter($data[0].dt_end) }
+        ],
+        "rows": [
+          [
+            $map(
+              $data,
+              function($item) {
+                {
+                  "id": { "value": $item.price_tier = "N/A" ? $config.labels.tt_abi : $item.price_tier },
+                  "type": { "value": $lowercase($item.level_1) = "comp" ? "competitor" : "abi" },
+                  "ac": {
+                    "chartData": {
+                      "data": [$item.ac],
+                      "backgroundColor": [$lowercase($item.level_1) = "comp" ? $config.legend[1].color : $config.legend[0].color],
+                      "secondaryBackgroundColor": [
+                        $lowercase($item.level_1) = "comp" ? $config.legend[1].selected_color : $config.legend[0].selected_color
+                      ]
+                    }
+                  },
+                  "ly": {
+                    "unitMeasure": $config.variation.unit_measure,
+                    "variationDirection": $getColorUpDown($item.ac_vs_ly, $config.direction.up, $config.direction.down),
+                    "value": $item.ac_vs_ly
+                  }
+                }
+              }
+            )
+          ]
+        ]
+      }
+)
+

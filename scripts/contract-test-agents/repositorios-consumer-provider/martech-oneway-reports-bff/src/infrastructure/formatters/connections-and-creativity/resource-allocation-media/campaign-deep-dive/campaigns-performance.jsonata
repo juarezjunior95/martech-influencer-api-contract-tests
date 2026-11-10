@@ -1,0 +1,181 @@
+(
+  /**
+   * 🎯 Component: Campaigns Performance Table (by brand)
+   * 📍 Used on: Resource Allocation Media > Campaign Deep Dive
+   * 🔄 Input: campaign-tracker-by-brand-table, campaign-tracker-by-brand-weekly-calendar
+   * 📤 Output: campaigns_performance { header, rows }
+   * 🔧 Config: colors (gantt_bar, milestone), week_ranges, spend_divisor
+   */
+  /* ─── Config ─── */
+  $config := {
+    "colors": {
+      "gantt_bar": "#F7EFBBA3",
+      "milestone": "#E5B611"
+    },
+    "week_ranges": $map([0..12], function($i) { ($i * 4 + 1) & "-" & ($i * 4 + 4) }),
+    "spend_divisor": 1000000
+  };
+
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $allKeys := $keys($datasources);
+  $tableKey := $filter($allKeys, function($k) { $not($contains($k, "weekly")) })[0];
+  $weeklyKey := $filter($allKeys, function($k) { $contains($k, "weekly") })[0];
+  $table := $exists($tableKey) ? ($lookup($datasources, $tableKey) ?: []) : [];
+  $weekly := $exists($weeklyKey) ? ($lookup($datasources, $weeklyKey) ?: []) : [];
+
+  $firstCountry := $count($table) > 0 ? $table[0].country_iso_code_3 : null;
+  $rowsByCountry := $exists($firstCountry) ? $table[country_iso_code_3 = $firstCountry] : [];
+
+  $tableIndex := $reduce($table, function($acc, $row) {(
+    $key := $row.raw_brand & "|" & $row.campaign & "|" & $row.kpi_variation;
+    $merge([$acc, { ($key): $row }])
+  )}, {});
+  $lookupTable := function($brand, $campaign, $kpi) { $lookup($tableIndex, $brand & "|" & $campaign & "|" & $kpi) };
+  $allBrands := $distinct($rowsByCountry.raw_brand);
+  $brands := $ensureArray($allBrands);
+
+  $header := [
+    { "title": "Brand", "id": "brand" },
+    { "title": "TT QWOA", "id": "tt_qwoa" },
+    { "title": "Campaign", "id": "campaign" },
+    { "title": "Campaign WOA", "id": "campaign_woa" },
+    { "title": "Campaign QWOA", "id": "campaign_qwoa" },
+    { "title": "Campaign", "id": "campaign_$", "subtitle": "[$Mio]" },
+    {
+      "title": "Gantt",
+      "id": "gantt",
+      "params": {
+        "type": "gantt",
+        "data": {
+          "weekRanges": $config.week_ranges,
+          "title": "Weekly Calendar",
+          "headerHeight": 55
+        }
+      }
+    }
+  ];
+
+  $weekNum := function($r) { $exists($r.week) ? $r.week : $r.week_number };
+
+  $brandsWithCampaigns := $filter($brands, function($brand) { $count($ensureArray($distinct($rowsByCountry[raw_brand = $brand][$.campaign != "TT QWOA"].campaign))) > 0 });
+  $rows := $count($brandsWithCampaigns) = 0
+    ? [[]]
+    : [
+        [
+          $map($brandsWithCampaigns, function($brand) {
+            (
+              $brandRows := $rowsByCountry[raw_brand = $brand];
+              $brand_data := $count($brandRows) > 0 ? $brandRows[0] : {};
+              $campaignsList := $distinct($brandRows[$.campaign != "TT QWOA"].campaign);
+              $campaigns := $ensureArray($campaignsList);
+              $segment := $exists($brand_data.segment) and $brand_data.segment != "N/A" ? $lowercase($brand_data.segment) : null;              
+              {
+                "brand": {
+                  "value": $brand,
+                  "portfolio": $segment,
+                  "src": $brand_data.brand.imageTable
+                },
+                "tt_qwoa": {
+                  "value": [
+                    (
+                      $campaignQwoaTotalRow := $lookupTable($brand, "", "campaign_qwoa_total") ?: $lookupTable($brand, "TT QWOA", "campaign_qwoa_total");
+                      $ttQwoaValue := $exists($campaignQwoaTotalRow) ? $campaignQwoaTotalRow.ac : null;
+                      {
+                        "id": "tt_qwoa",
+                        "value": $ttQwoaValue
+                      }
+                    )
+                  ]
+                },
+                "campaign": {
+                  "cellType": "text",
+                  "value": $ensureArray($map($campaigns, function($campaign, $index) {
+                    { "id": "campaign_" & ($index + 1), "value": $campaign }
+                  }))
+                },
+                "campaign_woa": {
+                  "cellType": "text",
+                  "value": $ensureArray($map($campaigns, function($campaign, $index) {
+                    (
+                      $campaignWoaRow := $lookupTable($brand, $campaign, "campaign_woa");
+                      $ac := $exists($campaignWoaRow) ? $campaignWoaRow.ac : null;
+                      { "id": "campaign_woa_" & ($index + 1), "value": $string($ac) }
+                    )
+                  }))
+                },
+                "campaign_qwoa": {
+                  "cellType": "text",
+                  "value": $ensureArray($map($campaigns, function($campaign, $index) {
+                    (
+                      $campaignQwoaRow := $lookupTable($brand, $campaign, "campaign_qwoa");
+                      $ac := $exists($campaignQwoaRow) ? $campaignQwoaRow.ac : null;
+                      { "id": "campaign_qwoa_" & ($index + 1), "value": $string($ac) }
+                    )
+                  }))
+                },
+                "campaign_$": {
+                  "cellType": "text",
+                  "value": $ensureArray($map($campaigns, function($campaign, $index) {
+                    (
+                      $spendRow := $lookupTable($brand, $campaign, "campaign_spend");
+                      $ac := $exists($spendRow) ? $spendRow.ac : 0;
+                      $rounded := $safeNumber($ac) / $config.spend_divisor;
+                      { "id": "campaign_$_" & ($index + 1), "value": "$" & $formatNumber($rounded, "#,##0.00") }
+                    )
+                  }))
+                },
+                "gantt": {
+                  "cellType": "gantt",
+                  "mode": "milestones",
+                  "ganttData": $ensureArray($map($campaigns, function($campaign, $campaignIndex) {
+                    (
+                      $campaign_weeks := $weekly[raw_brand = $brand and campaign = $campaign];
+                      $weeks_with_data := $map($campaign_weeks, function($r) { $weekNum($r) });
+                      $min_week := $count($weeks_with_data) > 0 ? $min($weeks_with_data) : null;
+                      $max_week := $count($weeks_with_data) > 0 ? $max($weeks_with_data) : null;
+                      $merge([
+                        {
+                          "id": "gantt_row_" & ($campaignIndex + 1),
+                          "cells": $map([1..52], function($weekNum) {
+                            (
+                              $week_data := $campaign_weeks[(($exists($.week) ? $.week : $.week_number) = $weekNum)];
+                              $has_data := $count($week_data) > 0;
+                              $is_start := $has_data and $weekNum = $min_week;
+                              $is_end := $has_data and $weekNum = $max_week;
+                              $single_week := $has_data and $count($weeks_with_data) = 1;
+                              $week_type_val := $count($week_data) > 0 ? $week_data[0].week_type : null;
+                              $timing_val := $has_data ? ($single_week ? "unique" : ($is_start ? "start" : ($is_end ? "end" : null))) : null;
+                              $merge([
+                                { "id": "week-" & $weekNum, "timing": $timing_val },
+                                $has_data ? { "color": $config.colors.gantt_bar } : {},
+                                $has_data and $week_type_val = "qwoa" ? { "milestone": { "color": $config.colors.milestone } } : {},
+                                $not($has_data) ? { "milestone": null } : {}
+                              ])
+                            )
+                          }),
+                          "style": { "height": "36px" },
+                          "mode": "milestones",
+                          "tooltip": [
+                            { "value": $min_week, "label": "Starting Week" },
+                            { "value": $max_week, "label": "Ending Week" }
+                          ]
+                        }
+                      ])
+                    )
+                  }))
+                }
+              }
+            )
+          })
+        ]
+      ];
+
+  {
+    "campaigns_performance": {
+      "header": $header,
+      "rows": $rows
+    }
+  }
+)

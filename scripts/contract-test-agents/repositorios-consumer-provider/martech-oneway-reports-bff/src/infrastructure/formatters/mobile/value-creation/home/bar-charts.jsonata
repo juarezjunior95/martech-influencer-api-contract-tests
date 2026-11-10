@@ -1,0 +1,319 @@
+/**
+ * 🔢 MOBILE: VALUE CREATION HOME BAR CHARTS FORMATTER 
+ * 🎯 Component: Bar Charts (Sustainable Growth)
+ * 📍 Used on: Mobile Value Creation Home > Sustainable Growth > Bar Charts
+ * 🔄 Input 1: value-creation_home_sustainable-growth-overview_non-finance
+ * 🔄 Input 2: value-creation_home_sustainable-growth-overview_finance
+ * 📤 Output: chartHeader, bigNumberData (vs LY and vs BU), barChart
+ */
+(
+  $volumeData := $ensureArray(datasources.volume);
+  $financeData := $ensureArray(datasources.finance);
+  $marketShareData := $ensureArray(datasources.marketShare);
+  $brandPowerData := $ensureArray(datasources.brandPower);
+
+  $config := {
+    "kpi_titles": {
+      "volume": "Volume",
+      "netRevenue": "Net Revenue",
+      "cores": "CORES",
+      "marketShare": "Market Share",
+      "brandPower": "Brand Power"
+    },
+    "default_measure": "[ % ]",
+    "comparison_label": "vs",
+    "comparison_ly": "LY",
+    "comparison_bu": "BU",
+    "empty_message": "Data not available for this view. Try adjusting your filters."
+  };
+
+  $formatPercentValue := function($value) {
+    $exists($value) and $type($value) = "number"
+      ? $formatNumber($value, "#,##0.0") & "%"
+      : "-"
+  };
+
+  $formatPeriodSuffix := function($period) {
+    (
+      $normalized := $exists($period) ? $uppercase($period) : "";
+      $normalized = "YTD" or $normalized = "MTD" or $normalized = "L3M"
+        ? $normalized
+        : ""
+    )
+  };
+
+  /*
+   * Finance KPIs (volume, netRevenue, cores) should prioritize period_type
+   * for the header tag (YTD/MTD/L3M). Other KPIs keep using period.
+   */
+  $resolveHeaderPeriod := function($row, $outputKey) {
+    (
+      $isFinanceKpi := $outputKey = "volume" or $outputKey = "netRevenue" or $outputKey = "cores";
+      $isFinanceKpi and $exists($row.period_type) and $row.period_type != ""
+        ? $row.period_type
+        : $row.period
+    )
+  };
+
+  /* Period label: "Mar'26 YTD/MTD/L3M" (months) or "Q1'26 YTD/MTD/L3M" (quarters for Brand Power) */
+  $formatPeriodLabel := function($dtEnd, $period, $isQuarter) {
+    (
+      $exists($dtEnd) and $dtEnd != ""
+        ? (
+          $datePart := $isQuarter ? $formatDateToQuarter($dtEnd) : $formatDateToMonth($dtEnd);
+          $periodSuffix := $formatPeriodSuffix($period);
+          $periodSuffix != "" ? $datePart & " " & $periodSuffix : $datePart
+        )
+        : "-"
+    )
+  };
+
+  /* Period range label from dt_ini and dt_end: "Jan-Mar'26" or "Mar'26" when same month */
+  $formatPeriodRange := function($dtIni, $dtEnd) {
+    (
+      $exists($dtIni) and $dtIni != "" and $exists($dtEnd) and $dtEnd != ""
+        ? (
+          $start := $fromMillis($toMillis($dtIni), "[MNn,*-3]");
+          $end := $fromMillis($toMillis($dtEnd), "[MNn,*-3]'[Y01]");
+          $sameMonth := $fromMillis($toMillis($dtIni), "[Y01][M01]") = $fromMillis($toMillis($dtEnd), "[Y01][M01]");
+          $sameMonth ? $end : ($start & "-" & $end)
+        )
+        : "-"
+    )
+  };
+
+  $formatHeaderTag := function($row, $outputKey, $resolvedPeriod, $isQuarter) {
+    (
+      $normalizedPeriod := $exists($resolvedPeriod) ? $uppercase($resolvedPeriod) : "";
+      $useRange := ($normalizedPeriod = "YTD" or $normalizedPeriod = "L3M") and $not($isQuarter);
+      $useRange
+        ? ($formatPeriodRange($row.dt_ini, $row.dt_end) & " " & $normalizedPeriod)
+        : $formatPeriodLabel($row.dt_end, $resolvedPeriod, $isQuarter)
+    )
+  };
+
+  $resolveBarPeriod := function($row, $outputKey) {
+    (
+      $isFinanceKpi := $outputKey = "volume" or $outputKey = "netRevenue" or $outputKey = "cores";
+      $rawPeriod := $isFinanceKpi ? $row.period_type : $row.period;
+      $normalized := $exists($rawPeriod) ? $uppercase($rawPeriod) : "";
+      (
+        $normalized = "YTD" or $normalized = "MTD" or $normalized = "L3M" or $normalized = "BU"
+      )
+        ? $normalized
+        : (
+            $fallbackPeriod := $exists($row.period) ? $uppercase($row.period) : "";
+            $contains($fallbackPeriod, "BU") ? "BU" : ""
+          )
+    )
+  };
+
+  /* Bar label from dt_end and source period: "MTD'26", "L3M'26", "YTD'26", "BU'26" */
+  $formatBarLabel := function($row, $outputKey) {
+    (
+      $exists($row.dt_end) and $row.dt_end != ""
+        ? (
+          $year := $fromMillis($toMillis($row.dt_end), "[Y01]");
+          $periodPrefix := $resolveBarPeriod($row, $outputKey);
+          $periodPrefix != "" ? $periodPrefix & "'" & $year : "'" & $year
+        )
+        : ""
+    )
+  };
+
+  $getKpiRows := function($sourceArray, $kpiName) {
+    $filter($sourceArray, function($item) { $lowercase($item.kpi_name) = $lowercase($kpiName) })
+  };
+
+  /* Year (number) extracted from dt_end */
+  $rowYear := function($row) {
+    $exists($row.dt_end) and $row.dt_end != ""
+      ? $number($fromMillis($toMillis($row.dt_end), "[Y0001]"))
+      : 0
+  };
+
+  $isBuRow := function($row) {
+    $exists($row.period) and $contains($row.period, "BU")
+  };
+
+  /*
+   * Mobile only displays 3 bars:
+   * - YTD of previous year
+   * - BU of current year
+   * - YTD of current year
+   * The "current year" is inferred from the last YTD (non-BU) row, falling back
+   * to the highest year available in the rows.
+   */
+  $selectMobileRows := function($rows) {
+    (
+      $count($rows) = 0 ? $rows : (
+        $ytdRows := $filter($rows, function($r) { $not($isBuRow($r)) });
+        $currentYear := $count($ytdRows) > 0
+          ? $rowYear($ytdRows[-1])
+          : $max($rows.($rowYear($)));
+        $previousYear := $currentYear - 1;
+
+        $pickLast := function($arr) {
+          $count($arr) > 0 ? [$arr[-1]] : []
+        };
+
+        $ytdPrev := $pickLast($filter($rows, function($r) {
+          $not($isBuRow($r)) and $rowYear($r) = $previousYear
+        }));
+        $buCurrent := $pickLast($filter($rows, function($r) {
+          $isBuRow($r) and $rowYear($r) = $currentYear
+        }));
+        $ytdCurrent := $pickLast($filter($rows, function($r) {
+          $not($isBuRow($r)) and $rowYear($r) = $currentYear
+        }));
+
+        $append($append($ytdPrev, $buCurrent), $ytdCurrent)
+      )
+    )
+  };
+
+  $buildKpiBlock := function($rows, $outputKey, $title, $isFinanceData, $chartMeasure) {
+    (
+      $selectedRows := $selectMobileRows($rows);
+      $hasData := $count($selectedRows) > 0;
+      $hasData
+        ? $buildKpiBlockForData($selectedRows, $outputKey, $title, $isFinanceData, $chartMeasure)
+        : {
+            "chartHeader": {
+              "title": $title,
+              "measure": $chartMeasure ?? $config.default_measure,
+              "period": ""
+            },
+            "bigNumberData": [],
+            "noticeMessage": $config.empty_message
+          }
+    )
+  };
+
+  $buildKpiBlockForData := function($rows, $outputKey, $title, $isFinanceData, $chartMeasure) {
+    (
+      $lastRow := $rows[-1];
+
+      $formatAc := $isFinanceData ? $formatFinanceValue : $formatPercentValue;
+
+      $isQuarter := $outputKey = "brandPower";
+      $headerPeriod := $resolveHeaderPeriod($lastRow, $outputKey);
+      $periodLabel := $formatHeaderTag($lastRow, $outputKey, $headerPeriod, $isQuarter);
+
+      $chartHeaderMeasure := $chartMeasure
+        ?? ($exists($lastRow.unit_of_measure) ? "[ " & $lastRow.unit_of_measure & " ]" : $config.default_measure);
+
+      $compMeasure := $lastRow.comp_unit_of_measure ?? "%";
+
+      $bigNumberLy := {
+        "value": $formatValue($lastRow.ac_vs_ly),
+        "measure": $compMeasure,
+        "trend": $getTrend($lastRow.ac_vs_ly, $lastRow.variationDirectionVsLy)
+      };
+
+      $bigNumberDataItems := $isFinanceData
+        ? [
+            {
+              "bigNumber": $bigNumberLy,
+              "comparison": { "label": $config.comparison_label, "value": $config.comparison_ly }
+            },
+            {
+              "bigNumber": {
+                "value": $formatValue($lastRow.ac_vs_bu),
+                "measure": $compMeasure,
+                "trend": $getTrend($lastRow.ac_vs_bu, $lastRow.variationDirectionVsBu)
+              },
+              "comparison": { "label": $config.comparison_label, "value": $config.comparison_bu }
+            }
+          ]
+        : [
+            {
+              "bigNumber": $bigNumberLy,
+              "comparison": { "label": $config.comparison_label, "value": $config.comparison_ly }
+            }
+          ];
+
+      $barLabels := $rows.($formatBarLabel($, $outputKey));
+      $barData := $rows.ac;
+      $formattedBarData := [[$rows.($formatAc(ac))]];
+
+      $buIndexes := $isFinanceData
+        ? $filter(
+            $map($rows, function($r, $i) { $isBuRow($r) ? $i : undefined }),
+            function($idx) { $exists($idx) }
+          )
+        : undefined;
+
+      {
+        "chartHeader": {
+          "title": $title,
+          "measure": $chartHeaderMeasure,
+          "period": $periodLabel
+        },
+        "bigNumberData": $bigNumberDataItems,
+        "barChart": {
+          "labels": $barLabels,
+          "datasets": [{ "label": "Dataset 1", "data": $barData }],
+          "formattedData": $formattedBarData,
+          "highlightLabels": [$barLabels[-1]],
+          "stripedIndexes": $buIndexes
+        }
+      }
+    )
+  };
+
+  $allKpis := [
+    {
+      "outputKey": "volume",
+      "title": $config.kpi_titles.volume,
+      "rows": $volumeData,
+      "isFinanceData": true,
+      "chartMeasure": "[ k hl ]"
+    },
+    {
+      "outputKey": "netRevenue",
+      "title": $config.kpi_titles.netRevenue,
+      "rows": $getKpiRows($financeData, "nr"),
+      "isFinanceData": true,
+      "chartMeasure": "[ $Mio ]"
+    },
+    {
+      "outputKey": "cores",
+      "title": $config.kpi_titles.cores,
+      "rows": $getKpiRows($financeData, "cores"),
+      "isFinanceData": true,
+      "chartMeasure": "[ $Mio ]"
+    },
+    {
+      "outputKey": "marketShare",
+      "title": $config.kpi_titles.marketShare,
+      "rows": $marketShareData,
+      "isFinanceData": false
+    },
+    {
+      "outputKey": "brandPower",
+      "title": $config.kpi_titles.brandPower,
+      "rows": $brandPowerData,
+      "isFinanceData": false
+    }
+  ];
+
+  $reduce(
+    $allKpis,
+    function($acc, $kpiDef) {
+      $merge([
+        $acc,
+        {
+          ($kpiDef.outputKey): $buildKpiBlock(
+            $kpiDef.rows,
+            $kpiDef.outputKey,
+            $kpiDef.title,
+            $kpiDef.isFinanceData,
+            $kpiDef.chartMeasure
+          )
+        }
+      ])
+    },
+    {}
+  )
+)

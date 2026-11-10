@@ -1,0 +1,159 @@
+/**
+ * 🔢 MATURITY/ZONE FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: Category > POS Book > Grow the Category > Zone-Maturity
+ * 🔄 Input: category_pos-book_grow-the-category_maturity, category_pos-book_grow-the-category_zone data
+ * 📤 Output: Zone/Maturity participation table with header and rows grouped by Global, Maturity, Zone
+ * 🔧 Config: color_dict for category colors
+ */
+
+(
+  $maturityData := datasources."category_pos-book_grow-the-category_maturity";
+  $zoneData := datasources."category_pos-book_grow-the-category_zone";
+  $isEmpty := $count($maturityData) = 0 and $count($zoneData) = 0;
+  $allDataForKpi := $append($maturityData, $zoneData);
+  $kpiName := ($isEmpty = false and $allDataForKpi[0] and $allDataForKpi[0].kpi_name) ? $allDataForKpi[0].kpi_name : "occasion";
+
+  $normalizeCategory := function($name) {
+    $name = "Alcohool" ? "Alcohol" : $name
+  };
+
+  $toCategoryId := function($name) {
+    $lowercase($replace($normalizeCategory($name), " ", "_"))
+  };
+
+  $colorDict := {
+    "alcohol": "#C9D1D6",
+    "beer": "#F0DF78",
+    "beyond_beer": "#EEC879",
+    "spirits": "#A1CFF4",
+    "wine": "#F6B7D0"
+  };
+
+  $getColor := function($category) {
+    $lookup($colorDict, $toCategoryId($category))
+  };
+
+  $normalizedKpiName := $lowercase($kpiName);
+  $isParticipation := $normalizedKpiName in ["p4w", "participation"];
+  $chartUnitMeasure := $isParticipation ? "%" : "";
+  $variationMeasure := $isParticipation ? "pp" : "";
+
+  $categoriesRaw := ["Alcohool", "Beer", "Beyond Beer", "Spirits", "Wine"];
+  $categoryIds := ["alcohol", "beer", "beyond_beer", "spirits", "wine"];
+
+  $allData := $append($maturityData, $zoneData);
+
+  $getMaxForCategory := function($categoryId) {
+    (
+      $categoryData := $filter($allData, function($item) { 
+        $toCategoryId($item.category) = $categoryId 
+      });
+      $acValues := $map($categoryData, function($item) { 
+        $type($item.ac) = "number" ? $item.ac : 0 
+      });
+      $validValues := $filter($acValues, function($val) { $type($val) = "number" });
+      $maxAc := $count($validValues) > 0 ? $max($validValues) : 0;
+      $maxAc > 0 ? $maxAc : 100
+    )
+  };
+
+  $buildCategoryData := function($item, $categoryRaw, $categoryId) {
+    (
+      $maxValue := $getMaxForCategory($categoryId);
+      $item ? {
+        "chartData": {
+          "data": [$formatValue($item.ac)],
+          "backgroundColor": [$getColor($categoryRaw)],
+          "chartUnitMeasure": $chartUnitMeasure
+        },
+        "variation": $formatValue($item.ac_vs_ly),
+        "variationMeasure": $variationMeasure,
+        "chartScaleMax": $maxValue
+      } : {
+        "chartData": {
+          "data": [0],
+          "backgroundColor": [$getColor($categoryRaw)],
+          "chartUnitMeasure": $chartUnitMeasure
+        },
+        "variation": 0,
+        "variationMeasure": $variationMeasure,
+        "chartScaleMax": $maxValue
+      }
+    )
+  };
+
+  $buildRow := function($rowData, $labelValue, $maturityZoneValue) {
+    $merge([
+      {
+        "label": { "value": $labelValue },
+        "maturity_zone": { "noChart": true, "value": $maturityZoneValue }
+      },
+      $merge($map($categoriesRaw, function($categoryRaw, $idx) {
+        (
+          $categoryId := $categoryIds[$idx];
+          $categoryItem := $filter($rowData, function($item) { 
+            $toCategoryId($item.category) = $categoryId 
+          })[0];
+          {
+            ($categoryId): $buildCategoryData($categoryItem, $categoryRaw, $categoryId)
+          }
+        )
+      }))
+    ])
+  };
+
+  $groups := [
+    { "type": "global", "label": " ", "items": ["Global"] },
+    { "type": "maturity", "label": "Maturity", "items": ["M3", "M2", "M1"] },
+    { "type": "zone", "label": "Zone", "items": ["AFR", "APAC", "EUR", "MAZ", "NAZ", "SAZ"] }
+  ];
+
+  $buildRows := function() {
+    $map($groups, function($group) {
+      (
+        $groupType := $group.type;
+        $groupLabel := $group.label;
+        $groupItems := $group.items;
+
+        $map($groupItems, function($itemValue) {
+          (
+            $rowData := $groupType = "global" 
+              ? $filter($maturityData, function($item) { $item.maturity = "N/A" })
+              : $groupType = "maturity"
+                ? $filter($maturityData, function($item) { $item.maturity = $itemValue })
+                : $filter($zoneData, function($item) { $item.abi_zone = $itemValue });
+            
+            $count($rowData) > 0 
+              ? $buildRow($rowData, $groupLabel, $itemValue)
+              : null
+          )
+        })
+      )
+    })
+  };
+
+  $labelHeader := {
+    "title": "Label",
+    "children": [
+      { "title": "Label", "id": "label" },
+      { "title": "Maturity/Zone", "id": "maturity_zone" }
+    ]
+  };
+
+  $categoryHeaders := $map($categoriesRaw, function($categoryRaw, $idx) {
+    {
+      "title": $normalizeCategory($categoryRaw),
+      "id": $categoryIds[$idx]
+    }
+  });
+
+  $header := $append([$labelHeader], $categoryHeaders);
+
+  $isEmpty
+    ? { "empty": true }
+    : {
+        "header": $header,
+        "rows": $buildRows()
+      }
+)

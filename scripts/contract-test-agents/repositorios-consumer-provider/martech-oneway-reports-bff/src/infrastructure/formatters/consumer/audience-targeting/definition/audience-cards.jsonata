@@ -1,0 +1,113 @@
+/**
+* 🎯 Component: Audience Cards
+* 📍 Used on: Consumer > Audience Targeting > Definition
+* 🔄 Input: consumer_audience-targeting_definition_brand-audience
+* 📤 Output: Array of card objects with audience demographics and brand volume
+* 🔧 Config: tooltips, emptyMessages, audienceTypeMap and brandVolume
+*/
+(
+  $config := {
+    "tooltips": {
+      "Core Audience": "Primary audience that concentrates at least 50% of the brand's declared volume (POS).",
+      "Halo Audience": "Adjacent expansion audience identified by under-indexing vs. the Brand's Core."
+    },
+    "emptyMessages": {
+      "Core Audience": "No R12M POS volume available",
+      "Halo Audience": "No Halo Audience"
+    },
+    "brandVolume": {
+      "label": "of Brand Volume",
+      "measure": "%"
+    },
+    "audienceTypeMap": {
+      "Core": { "title": "Core Audience", "audienceType": "core" },
+      "Halo": { "title": "Halo Audience", "audienceType": "halo" }
+    },
+    "emptyCards": [
+      { "title": "Core Audience", "sourceType": "Core", "audienceType": "core" },
+      { "title": "Halo Audience", "sourceType": "Halo", "audienceType": "halo" }
+    ]
+  };
+
+  $dsKeys := $keys(datasources);
+  $matchedDsKey := $filter($dsKeys, function($key) { $contains($key, "brand-audience") })[0];
+  $dsKey := $exists($matchedDsKey) ? $matchedDsKey : $dsKeys[0];
+  $rawData := $exists($dsKey) ? $lookup(datasources, $dsKey) : [];
+  $data := $type($rawData) = "array" ? $rawData : $exists($rawData) ? [$rawData] : [];
+
+  $getBrandVolume := function($audienceIndex) {
+    (
+      $exists($audienceIndex) and $type($audienceIndex) = "number" ? (
+        $formatted := $formatValue($audienceIndex);
+        {
+          "value": $formatted,
+          "label": $config.brandVolume.label,
+          "measure": $formatted != "-" ? $config.brandVolume.measure : ""
+        }
+      ) : { "empty": true }
+    )
+  };
+
+  $normalizeDemographicValue := function($value) {
+    (
+      $trimmed := $trim($string($value));
+      $compact := $replace($trimmed, /\s+/, "");
+      $plusAgeMatch := $match($compact, /^\+(\d+)$/);
+      $afterAgePlus := $exists($plusAgeMatch.match)
+        ? $substring($compact, 1) & "+"
+        : $trimmed;
+      $normalized := $lowercase($replace($afterAgePlus, /\s+/, "")) = "lda-24"
+        ? "LDA - 24"
+        : $afterAgePlus;
+      $lowercase($normalized) = "n/a" ? "-" : $normalized
+    )
+  };
+
+  $parseDemographic := function($rawValue, $removeIncomeWord) {
+    $rawValue ? (
+      $normalized := $map($split($trim($rawValue), ";"), function($v) {
+        (
+          $prepared := $removeIncomeWord ? $trim($replace($v, "Income", "")) : $trim($v);
+          $normalizeDemographicValue($prepared)
+        )
+      });
+      $ensureArray($filter($normalized, function($item) { $item != "" }))
+    ) : []
+  };
+
+  $ensureArray($map($config.emptyCards, function($card) {
+    (
+      $row := $data[audience_type = $card.sourceType][0];
+      $hasRow := $exists($row);
+      $brandVolume := $hasRow ? $getBrandVolume($row.audience_index) : {};
+      {
+        "header": $merge([
+          {
+            "title": $card.title,
+            "tooltip": $lookup($config.tooltips, $card.title)
+          },
+          $not($hasRow)
+            ? { "emptyMessage": $lookup($config.emptyMessages, $card.title) }
+            : $not($exists($brandVolume.value)) and $card.audienceType = "core"
+              ? { "emptyMessage": $lookup($config.emptyMessages, $card.title) }
+              : {}
+        ]),
+        "data": $hasRow
+          ? [
+              $merge([
+                {
+                  "audience": {
+                    "gender": $parseDemographic($row.gender, false),
+                    "age": $parseDemographic($row.age, false),
+                    "incomeBracket": $parseDemographic($row.income, true)
+                  },
+                  "audienceType": $card.audienceType
+                },
+                { "brandVolume": $brandVolume }
+              ])
+            ]
+          : []
+      }
+    )
+  }))
+)

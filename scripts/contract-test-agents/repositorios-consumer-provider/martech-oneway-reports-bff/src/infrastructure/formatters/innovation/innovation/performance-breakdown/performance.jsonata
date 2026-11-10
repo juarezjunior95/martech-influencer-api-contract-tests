@@ -1,0 +1,175 @@
+/**
+ * 🔢 INNOVATION BREAKDOWN FORMATTER
+ * 🎯 Component: Innovation Performance Chart
+ * 📍 Used on: Innovation > Performance Breakdown > Performance
+ * 🔄 Input: yoy-growth + yoy-growth-contribution datasources
+ * 📤 Output: InnovationPerformanceData interface
+ */
+
+(
+  /* Separate chart data (yoy-growth) from contribution data (yoy-growth-contribution) */
+  $dsKeys := $keys(datasources);
+  $yoyKey := $dsKeys[$not($contains($, "contribution"))][0];
+  $contribKey := $dsKeys[$contains($, "contribution")][0];
+  $chartData := $lookup(datasources, $yoyKey);
+  $contribData := $contribKey ? $lookup(datasources, $contribKey) : [];
+
+  $kpi := $chartData[0].kpi_name;
+  $isEmpty := $count($chartData) = 0;
+  
+  /* Configuration */
+  $config := {
+    "direction": {
+      "up": "#007800",
+      "down": "#B91C1C"
+    },
+    "connector_direction": {
+      "bg_color": {"up": "#E6F9E6", "down": "#FFE6E6" },
+      "text_color": { "up": "#007800", "down": "#BA0B0B" }
+    },
+    "kpi_name_prefix": {
+      "innovation_volume": "Vol.",
+      "innovation_nr": "Net Rev.",
+      "innovation_maco": "MACO"
+    }
+  };
+
+  $kpiPrefix := $lookup($config.kpi_name_prefix, $kpi);
+
+  $labelsMap := {
+    "FY_YEAR-2": $kpiPrefix & " [YEAR]" & "'FY",
+    "FY_YEAR-1": $kpiPrefix & " [YEAR]" & "'FY",
+    "EXPIRATION": "Expiration",
+    "BASELINE": "Baseline [YEAR]'",
+    "LAUNCHES": "Launches",
+    "Y1-Y2": "Y1-Y2",
+    "Y2-Y3": "Y2-Y3",
+    "Y3-Y4": "Y3-Y4",
+    "Y4-Y5": "Y4-Y5",
+    "LE_YEAR": $kpiPrefix & " [YEAR]" & "'LE"
+  };
+
+  $clickableLabels := [
+    "LAUNCHES", "Y1-Y2", "Y2-Y3", "Y3-Y4", "Y4-Y5"
+  ];
+  $clickableFilterValues := {
+    "LAUNCHES": "y1", 
+    "Y1-Y2": "y2", 
+    "Y2-Y3": "y3", 
+    "Y3-Y4": "y4", 
+    "Y4-Y5": "y5"
+  };
+  $specialLabels := {
+    "first": "FY_YEAR-1",
+    "retained": "BASELINE"
+  };
+
+  $retrieveLabel := function($dtEnd, $label){(
+    $year := $substring($dtEnd, 2, 2);
+    $mappedLabel := $lookup($labelsMap, $label);
+    $adjustedLabel := $replace($mappedLabel , "[YEAR]", $year);
+
+    $nextYear := $string($number($year) + 1);
+    $replace($adjustedLabel , "[YEAR+1]", $nextYear);
+  )};
+
+  /* Format number to string with one decimal */
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number" ?
+        $formatNumber($value, '#,##0.0')
+        : "-"
+  };
+  
+  /* Get direction color */
+  $getDirectionColor := function($direction) {
+    $lookup($config.direction, $direction)
+  };
+  
+  $isEmpty
+    ? { "empty": true }
+    : (
+      /* Create data array */
+      $dataArray := $chartData.(
+        value = null ? 0 : value
+      );
+
+      /* Build labels array */
+      $labelsData := $map($chartData,
+        function($chartDataPoint, $index) {(
+          $isClickable := $chartDataPoint.label in $clickableLabels;
+          {
+            "label": $retrieveLabel($chartDataPoint.dt_end, $chartDataPoint.label) ?? $chartDataPoint.label,
+            "clickable": $isClickable,
+            "clickable_value": $isClickable ?  $lookup($clickableFilterValues, $chartDataPoint.label) : "",
+            "first": $chartDataPoint.label = $specialLabels.first,
+            "retained": $chartDataPoint.label = $specialLabels.retained,
+            "index": $index            
+          }
+        )}
+      );
+
+      $labelsArray := $chartData.(
+        $retrieveLabel(dt_end, label) ?? label
+      );
+
+      /* Comparison line - contribution data from yoy-growth-contribution datasource */
+      $emptyComparisonPoint := {
+        "value": "",
+        "measure": "",
+        "color": ""
+      };
+
+      $comparisonLineData := [
+        {
+          "title": $kpiPrefix & " Contrib.",
+          "data": $map($chartData, function($chartItem) {(
+            $ci := $contribData[label = $chartItem.label];
+            $exists($ci) and $exists($ci.contribution) and $type($ci.contribution) = "number" ? {
+              "value": $formatValue($ci.contribution),
+              "measure": "%",
+              "color": $getDirectionColor($ci.variationDirectionContribution)
+            } : $exists($ci) ? {
+              "value": "-",
+              "measure": "",
+              "color": "#5C5C5C"
+            } : $emptyComparisonPoint
+          )})
+        }
+      ];
+
+      /* Connector - calculated from FY_YEAR-1 and LE_YEAR */
+      $fyYear1 := $chartData[label = "FY_YEAR-1"];
+      $leYear := $chartData[label = "LE_YEAR"];
+      $delta := $leYear.value - $fyYear1.value;
+      $connectorDirection := $delta >= 0 ? "up" : "down";
+
+      $connector := {
+        "value": $delta,
+        "from": $labelsArray[1],
+        "to": $labelsArray[-1],
+        "backgroundColor": $lookup($config.connector_direction.bg_color, $connectorDirection),
+        "textColor": $lookup($config.connector_direction.text_color, $connectorDirection),
+        "measure": $chartData[0].unit_of_measure
+      };
+
+      $specialIndexes := {
+        "first": $labelsData[first = true].index,
+        "last": $count($chartData) - 1,
+        "retained": $labelsData[retained = true].index
+      };
+
+      $clickableIndexes := [$labelsData[clickable = true].({
+        "index": index,
+        "value": clickable_value
+      })];
+
+      {
+        "data": $dataArray,
+        "labels": $labelsArray,
+        "specialIndexes": $specialIndexes,
+        "clickableIndexes": $clickableIndexes,
+        "comparisonLineData": $comparisonLineData,
+        "connector": $connector
+      }
+    )
+)

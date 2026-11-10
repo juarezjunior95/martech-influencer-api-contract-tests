@@ -1,0 +1,40 @@
+/**
+ * 🤖 AI SUMMARY FORMATTER
+ * 🎯 Component: Summary
+ * 📍 Used on: Dynamic pages with AI-generated insights
+ * 🔄 Input: ai-summary_ai-summary datasource
+ * 📤 Output: Summary object with resume, seeMore and trend
+ */
+(
+  $dsKey := $keys($.datasources)[0];
+  $data := $lookup($.datasources, $dsKey);
+  
+  $completeRecords := $filter($data, function($record) {
+    ($exists($record.insight_see_more) and $record.insight_see_more != null) and
+    ($exists($record.insight_wo_see_more) and $record.insight_wo_see_more != null)
+  });
+  
+  $item := $count($completeRecords) > 0 ? $completeRecords[0] : $data[0];
+  
+  $trendMap := {
+    "POSITIVE": "positive",
+    "NEGATIVE": "negative",
+    "NEUTRAL": "neutral"
+  };
+  
+  $count($data) = 0 or $not($exists($item))
+    ? { "empty": true }
+    : {
+        "resume": $exists($item.insight_wo_see_more) and $item.insight_wo_see_more != null
+          ? $item.insight_wo_see_more
+          : "",
+        "seeMore": $exists($item.insight_see_more) and $item.insight_see_more != null
+          ? $item.insight_see_more
+          : undefined,
+        "trend": $exists($item.trend) and $item.trend != null
+          ? $lookup($trendMap, $uppercase($item.trend))
+            ? $lookup($trendMap, $uppercase($item.trend))
+            : "neutral"
+          : "neutral"
+      }
+)

@@ -1,0 +1,90 @@
+f705f74ad231e44b63ef80b20150977c
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.push = push;
+exports.splice = splice;
+/**
+ * Like `Array#splice`, but smarter for giant arrays.
+ *
+ * `Array#splice` takes all items to be inserted as individual argument which
+ * causes a stack overflow in V8 when trying to insert 100k items for instance.
+ *
+ * Otherwise, this does not return the removed items, and takes `items` as an
+ * array instead of rest parameters.
+ *
+ * @template {unknown} T
+ *   Item type.
+ * @param {Array<T>} list
+ *   List to operate on.
+ * @param {number} start
+ *   Index to remove/insert at (can be negative).
+ * @param {number} remove
+ *   Number of items to remove.
+ * @param {Array<T>} items
+ *   Items to inject into `list`.
+ * @returns {undefined}
+ *   Nothing.
+ */
+function splice(list, start, remove, items) {
+  const end = list.length;
+  let chunkStart = 0;
+  /** @type {Array<unknown>} */
+  let parameters;
+
+  // Make start between zero and `end` (included).
+  if (start < 0) {
+    start = -start > end ? 0 : end + start;
+  } else {
+    start = start > end ? end : start;
+  }
+  remove = remove > 0 ? remove : 0;
+
+  // No need to chunk the items if there’s only a couple (10k) items.
+  if (items.length < 10000) {
+    parameters = Array.from(items);
+    parameters.unshift(start, remove);
+    // @ts-expect-error Hush, it’s fine.
+    list.splice(...parameters);
+  } else {
+    // Delete `remove` items starting from `start`
+    if (remove) list.splice(start, remove);
+
+    // Insert the items in chunks to not cause stack overflows.
+    while (chunkStart < items.length) {
+      parameters = items.slice(chunkStart, chunkStart + 10000);
+      parameters.unshift(start, 0);
+      // @ts-expect-error Hush, it’s fine.
+      list.splice(...parameters);
+      chunkStart += 10000;
+      start += 10000;
+    }
+  }
+}
+
+/**
+ * Append `items` (an array) at the end of `list` (another array).
+ * When `list` was empty, returns `items` instead.
+ *
+ * This prevents a potentially expensive operation when `list` is empty,
+ * and adds items in batches to prevent V8 from hanging.
+ *
+ * @template {unknown} T
+ *   Item type.
+ * @param {Array<T>} list
+ *   List to operate on.
+ * @param {Array<T>} items
+ *   Items to add to `list`.
+ * @returns {Array<T>}
+ *   Either `list` or `items`.
+ */
+function push(list, items) {
+  if (list.length > 0) {
+    splice(list, list.length, 0, items);
+    return list;
+  }
+  return items;
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJuYW1lcyI6WyJzcGxpY2UiLCJsaXN0Iiwic3RhcnQiLCJyZW1vdmUiLCJpdGVtcyIsImVuZCIsImxlbmd0aCIsImNodW5rU3RhcnQiLCJwYXJhbWV0ZXJzIiwiQXJyYXkiLCJmcm9tIiwidW5zaGlmdCIsInNsaWNlIiwicHVzaCJdLCJzb3VyY2VzIjpbImluZGV4LmpzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogTGlrZSBgQXJyYXkjc3BsaWNlYCwgYnV0IHNtYXJ0ZXIgZm9yIGdpYW50IGFycmF5cy5cbiAqXG4gKiBgQXJyYXkjc3BsaWNlYCB0YWtlcyBhbGwgaXRlbXMgdG8gYmUgaW5zZXJ0ZWQgYXMgaW5kaXZpZHVhbCBhcmd1bWVudCB3aGljaFxuICogY2F1c2VzIGEgc3RhY2sgb3ZlcmZsb3cgaW4gVjggd2hlbiB0cnlpbmcgdG8gaW5zZXJ0IDEwMGsgaXRlbXMgZm9yIGluc3RhbmNlLlxuICpcbiAqIE90aGVyd2lzZSwgdGhpcyBkb2VzIG5vdCByZXR1cm4gdGhlIHJlbW92ZWQgaXRlbXMsIGFuZCB0YWtlcyBgaXRlbXNgIGFzIGFuXG4gKiBhcnJheSBpbnN0ZWFkIG9mIHJlc3QgcGFyYW1ldGVycy5cbiAqXG4gKiBAdGVtcGxhdGUge3Vua25vd259IFRcbiAqICAgSXRlbSB0eXBlLlxuICogQHBhcmFtIHtBcnJheTxUPn0gbGlzdFxuICogICBMaXN0IHRvIG9wZXJhdGUgb24uXG4gKiBAcGFyYW0ge251bWJlcn0gc3RhcnRcbiAqICAgSW5kZXggdG8gcmVtb3ZlL2luc2VydCBhdCAoY2FuIGJlIG5lZ2F0aXZlKS5cbiAqIEBwYXJhbSB7bnVtYmVyfSByZW1vdmVcbiAqICAgTnVtYmVyIG9mIGl0ZW1zIHRvIHJlbW92ZS5cbiAqIEBwYXJhbSB7QXJyYXk8VD59IGl0ZW1zXG4gKiAgIEl0ZW1zIHRvIGluamVjdCBpbnRvIGBsaXN0YC5cbiAqIEByZXR1cm5zIHt1bmRlZmluZWR9XG4gKiAgIE5vdGhpbmcuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBzcGxpY2UobGlzdCwgc3RhcnQsIHJlbW92ZSwgaXRlbXMpIHtcbiAgY29uc3QgZW5kID0gbGlzdC5sZW5ndGg7XG4gIGxldCBjaHVua1N0YXJ0ID0gMDtcbiAgLyoqIEB0eXBlIHtBcnJheTx1bmtub3duPn0gKi9cbiAgbGV0IHBhcmFtZXRlcnM7XG5cbiAgLy8gTWFrZSBzdGFydCBiZXR3ZWVuIHplcm8gYW5kIGBlbmRgIChpbmNsdWRlZCkuXG4gIGlmIChzdGFydCA8IDApIHtcbiAgICBzdGFydCA9IC1zdGFydCA+IGVuZCA/IDAgOiBlbmQgKyBzdGFydDtcbiAgfSBlbHNlIHtcbiAgICBzdGFydCA9IHN0YXJ0ID4gZW5kID8gZW5kIDogc3RhcnQ7XG4gIH1cbiAgcmVtb3ZlID0gcmVtb3ZlID4gMCA/IHJlbW92ZSA6IDA7XG5cbiAgLy8gTm8gbmVlZCB0byBjaHVuayB0aGUgaXRlbXMgaWYgdGhlcmXigJlzIG9ubHkgYSBjb3VwbGUgKDEwaykgaXRlbXMuXG4gIGlmIChpdGVtcy5sZW5ndGggPCAxMDAwMCkge1xuICAgIHBhcmFtZXRlcnMgPSBBcnJheS5mcm9tKGl0ZW1zKTtcbiAgICBwYXJhbWV0ZXJzLnVuc2hpZnQoc3RhcnQsIHJlbW92ZSk7XG4gICAgLy8gQHRzLWV4cGVjdC1lcnJvciBIdXNoLCBpdOKAmXMgZmluZS5cbiAgICBsaXN0LnNwbGljZSguLi5wYXJhbWV0ZXJzKTtcbiAgfSBlbHNlIHtcbiAgICAvLyBEZWxldGUgYHJlbW92ZWAgaXRlbXMgc3RhcnRpbmcgZnJvbSBgc3RhcnRgXG4gICAgaWYgKHJlbW92ZSkgbGlzdC5zcGxpY2Uoc3RhcnQsIHJlbW92ZSk7XG5cbiAgICAvLyBJbnNlcnQgdGhlIGl0ZW1zIGluIGNodW5rcyB0byBub3QgY2F1c2Ugc3RhY2sgb3ZlcmZsb3dzLlxuICAgIHdoaWxlIChjaHVua1N0YXJ0IDwgaXRlbXMubGVuZ3RoKSB7XG4gICAgICBwYXJhbWV0ZXJzID0gaXRlbXMuc2xpY2UoY2h1bmtTdGFydCwgY2h1bmtTdGFydCArIDEwMDAwKTtcbiAgICAgIHBhcmFtZXRlcnMudW5zaGlmdChzdGFydCwgMCk7XG4gICAgICAvLyBAdHMtZXhwZWN0LWVycm9yIEh1c2gsIGl04oCZcyBmaW5lLlxuICAgICAgbGlzdC5zcGxpY2UoLi4ucGFyYW1ldGVycyk7XG4gICAgICBjaHVua1N0YXJ0ICs9IDEwMDAwO1xuICAgICAgc3RhcnQgKz0gMTAwMDA7XG4gICAgfVxuICB9XG59XG5cbi8qKlxuICogQXBwZW5kIGBpdGVtc2AgKGFuIGFycmF5KSBhdCB0aGUgZW5kIG9mIGBsaXN0YCAoYW5vdGhlciBhcnJheSkuXG4gKiBXaGVuIGBsaXN0YCB3YXMgZW1wdHksIHJldHVybnMgYGl0ZW1zYCBpbnN0ZWFkLlxuICpcbiAqIFRoaXMgcHJldmVudHMgYSBwb3RlbnRpYWxseSBleHBlbnNpdmUgb3BlcmF0aW9uIHdoZW4gYGxpc3RgIGlzIGVtcHR5LFxuICogYW5kIGFkZHMgaXRlbXMgaW4gYmF0Y2hlcyB0byBwcmV2ZW50IFY4IGZyb20gaGFuZ2luZy5cbiAqXG4gKiBAdGVtcGxhdGUge3Vua25vd259IFRcbiAqICAgSXRlbSB0eXBlLlxuICogQHBhcmFtIHtBcnJheTxUPn0gbGlzdFxuICogICBMaXN0IHRvIG9wZXJhdGUgb24uXG4gKiBAcGFyYW0ge0FycmF5PFQ+fSBpdGVtc1xuICogICBJdGVtcyB0byBhZGQgdG8gYGxpc3RgLlxuICogQHJldHVybnMge0FycmF5PFQ+fVxuICogICBFaXRoZXIgYGxpc3RgIG9yIGBpdGVtc2AuXG4gKi9cbmV4cG9ydCBmdW5jdGlvbiBwdXNoKGxpc3QsIGl0ZW1zKSB7XG4gIGlmIChsaXN0Lmxlbmd0aCA+IDApIHtcbiAgICBzcGxpY2UobGlzdCwgbGlzdC5sZW5ndGgsIDAsIGl0ZW1zKTtcbiAgICByZXR1cm4gbGlzdDtcbiAgfVxuICByZXR1cm4gaXRlbXM7XG59Il0sIm1hcHBpbmdzIjoiOzs7Ozs7O0FBQUE7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDTyxTQUFTQSxNQUFNQSxDQUFDQyxJQUFJLEVBQUVDLEtBQUssRUFBRUMsTUFBTSxFQUFFQyxLQUFLLEVBQUU7RUFDakQsTUFBTUMsR0FBRyxHQUFHSixJQUFJLENBQUNLLE1BQU07RUFDdkIsSUFBSUMsVUFBVSxHQUFHLENBQUM7RUFDbEI7RUFDQSxJQUFJQyxVQUFVOztFQUVkO0VBQ0EsSUFBSU4sS0FBSyxHQUFHLENBQUMsRUFBRTtJQUNiQSxLQUFLLEdBQUcsQ0FBQ0EsS0FBSyxHQUFHRyxHQUFHLEdBQUcsQ0FBQyxHQUFHQSxHQUFHLEdBQUdILEtBQUs7RUFDeEMsQ0FBQyxNQUFNO0lBQ0xBLEtBQUssR0FBR0EsS0FBSyxHQUFHRyxHQUFHLEdBQUdBLEdBQUcsR0FBR0gsS0FBSztFQUNuQztFQUNBQyxNQUFNLEdBQUdBLE1BQU0sR0FBRyxDQUFDLEdBQUdBLE1BQU0sR0FBRyxDQUFDOztFQUVoQztFQUNBLElBQUlDLEtBQUssQ0FBQ0UsTUFBTSxHQUFHLEtBQUssRUFBRTtJQUN4QkUsVUFBVSxHQUFHQyxLQUFLLENBQUNDLElBQUksQ0FBQ04sS0FBSyxDQUFDO0lBQzlCSSxVQUFVLENBQUNHLE9BQU8sQ0FBQ1QsS0FBSyxFQUFFQyxNQUFNLENBQUM7SUFDakM7SUFDQUYsSUFBSSxDQUFDRCxNQUFNLENBQUMsR0FBR1EsVUFBVSxDQUFDO0VBQzVCLENBQUMsTUFBTTtJQUNMO0lBQ0EsSUFBSUwsTUFBTSxFQUFFRixJQUFJLENBQUNELE1BQU0sQ0FBQ0UsS0FBSyxFQUFFQyxNQUFNLENBQUM7O0lBRXRDO0lBQ0EsT0FBT0ksVUFBVSxHQUFHSCxLQUFLLENBQUNFLE1BQU0sRUFBRTtNQUNoQ0UsVUFBVSxHQUFHSixLQUFLLENBQUNRLEtBQUssQ0FBQ0wsVUFBVSxFQUFFQSxVQUFVLEdBQUcsS0FBSyxDQUFDO01BQ3hEQyxVQUFVLENBQUNHLE9BQU8sQ0FBQ1QsS0FBSyxFQUFFLENBQUMsQ0FBQztNQUM1QjtNQUNBRCxJQUFJLENBQUNELE1BQU0sQ0FBQyxHQUFHUSxVQUFVLENBQUM7TUFDMUJELFVBQVUsSUFBSSxLQUFLO01BQ25CTCxLQUFLLElBQUksS0FBSztJQUNoQjtFQUNGO0FBQ0Y7O0FBRUE7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDTyxTQUFTVyxJQUFJQSxDQUFDWixJQUFJLEVBQUVHLEtBQUssRUFBRTtFQUNoQyxJQUFJSCxJQUFJLENBQUNLLE1BQU0sR0FBRyxDQUFDLEVBQUU7SUFDbkJOLE1BQU0sQ0FBQ0MsSUFBSSxFQUFFQSxJQUFJLENBQUNLLE1BQU0sRUFBRSxDQUFDLEVBQUVGLEtBQUssQ0FBQztJQUNuQyxPQUFPSCxJQUFJO0VBQ2I7RUFDQSxPQUFPRyxLQUFLO0FBQ2QiLCJpZ25vcmVMaXN0IjpbXX0=

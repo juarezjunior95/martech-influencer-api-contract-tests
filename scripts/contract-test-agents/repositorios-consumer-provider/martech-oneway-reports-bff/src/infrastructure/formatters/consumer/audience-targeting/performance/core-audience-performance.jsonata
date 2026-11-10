@@ -1,0 +1,67 @@
+/**
+* 🎯 Component: Core Audience Performance
+* 📍 Used on: Consumer > Audience Targeting > Performance
+* 🔄 Input: consumer_audience-targeting_performance_core-audience-performance
+* 📤 Output: Array of performance metrics by KPI group
+* 🔧 Config: groupMapping, groupOrder, measure
+*/
+(
+  $config := {
+    "groupMapping": {
+      "Participation": "participation",
+      "Occasions": "occasions",
+      "Brand Power": "brandPower"
+    },
+    "groupOrder": ["Participation", "Occasions", "Brand Power"],
+    "measure": "pp"
+  };
+
+  $dsKey := $keys(datasources)[0];
+  $rawData := $lookup(datasources, $dsKey);
+  $data := $type($rawData) = "array" ? $rawData : $exists($rawData) ? [$rawData] : [];
+
+  $isValidNumber := function($val) { $type($val) = "number" };
+
+  $getVariation := function($value) {
+    $not($isValidNumber($value)) ? "neutral" :
+    $value > 0 ? "up" :
+    $value < 0 ? "down" :
+    "neutral"
+  };
+
+  $map($config.groupOrder, function($group) {
+    (
+      $row := $data[nm_group = $group][0];
+      $groupId := $lookup($config.groupMapping, $group);
+      $exists($row) ? {
+        "id": $groupId,
+        "performanceIndex": {
+          "value": $formatValue($row.coreaudiencevstotal),
+          "variation": $getIndexColor($row.coreaudiencevstotal).color
+        },
+        "bigNumberData": [
+          {
+            "value": $formatValue($row.corevsly),
+            "measure": $isValidNumber($row.corevsly) ? $config.measure : "",
+            "variation": $getVariation($row.corevsly),
+            "id": "core"
+          },
+          {
+            "value": $formatValue($row.brandvsly),
+            "measure": $isValidNumber($row.brandvsly) ? $config.measure : "",
+            "variation": $getVariation($row.brandvsly),
+            "id": "brand"
+          }
+        ]
+      } : {
+        "id": $groupId,
+        "empty": true,
+        "performanceIndex": {
+          "value": "",
+          "variation": "neutral"
+        },
+        "bigNumberData": []
+      }
+    )
+  })
+)

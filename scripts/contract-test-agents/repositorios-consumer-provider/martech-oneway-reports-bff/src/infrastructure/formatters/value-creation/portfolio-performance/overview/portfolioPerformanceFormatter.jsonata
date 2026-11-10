@@ -1,0 +1,268 @@
+/**
+ * 🔢 PORTFOLIO PERFORMANCE TABLE FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: Portfolio Performance > Table
+ * 🔄 Input: portfolio-performance and brands datasources
+ * 📤 Output: TableData interface
+ */
+
+(
+  /* Extract datasources */
+  $performanceDatasourceName := "value-creation_portfolio-performance_overview_portfolio-performance_portfolio-performance";
+  $brandsDatasourceName := "value-creation_portfolio-performance_overview_portfolio-performance_brands";
+  $performanceData := $lookup(datasources, $performanceDatasourceName) ? $lookup(datasources, $performanceDatasourceName) : [];
+  $brandsData := $lookup(datasources, $brandsDatasourceName) ? $lookup(datasources, $brandsDatasourceName) : [];
+
+  /* Helper functions */
+  $toNumber := function($val) {
+    $type($val) = "number"
+      ? $val
+      : (
+        $type($val) = "string" and $match($trim($val), /^[-+]?[0-9]*[.]?[0-9]+$/)
+          ? $number($trim($val))
+          : undefined
+      )
+  };
+
+  $safeNumber := function($val) {
+    (
+      $numeric := $toNumber($val);
+      $exists($numeric) ? $round($numeric, 1) : "-"
+    )
+  };
+
+  $ensureArray := function($value) {
+    $type($value) = "array"
+      ? $value
+      : ($exists($value) and $value != null ? [$value] : [])
+  };
+
+  $getField := function($item, $field) {
+    $exists($item) ? $lookup($item, $field) : undefined
+  };
+
+  $getSegmentData := function($segment) {(
+    $segmentLower := $lowercase($segment);
+    $performanceData[$lowercase(segment) = $segmentLower][0]
+  )};
+
+  $getDirection := function($raw, $rawDirection) {(
+    $value := $toNumber($raw);
+    $direction := $type($rawDirection) = "string" ? $trim($rawDirection) : "";
+    $direction != ""
+      ? $direction
+      : ($exists($value) ? ($value > 0 ? "up" : ($value < 0 ? "down" : null)) : null)
+  )};
+
+  $cell := function($raw, $unit) {(
+    $value := $safeNumber($raw);
+    $value != "-"
+      ? { "unitMeasure": $unit, "value": $value }
+      : { "value": "-" }
+  )};
+
+  $cellVar := function($raw, $unit, $dir) {(
+    $value := $safeNumber($raw);
+    $value != "-"
+      ? { "unitMeasure": $unit, "value": $value, "variationDirection": $dir }
+      : { "value": "-" }
+  )};
+
+  /* Get brands for segment */
+  $getBrandsForSegment := function($segment) {(
+    $segmentLower := $lowercase($segment);
+    $brands := $filter($brandsData, function($brand) { $lowercase($brand.segment) = $segmentLower });
+    $ensureArray($map($brands, function($brand) {
+      (
+        $value := $safeNumber($brand.ac_vs_ly);
+        {
+          "src": $brand.brand_image,
+          "name": $brand.brand,
+          "variation": $value,
+          "variationMeasure": $value = "-" ? undefined : "%",
+          "variationDirection": $value = "-" ? undefined : $getDirection($brand.ac_vs_ly, $brand.comp_ac_ly_direction),
+          "country": $brand.country,
+          "country_src": $brand.country_image
+        }
+      )
+    }))
+  )};
+
+  /* Build row for a segment */
+  $buildRow := function($segment, $isTotal) {
+    (
+      $lookupSegment := $isTotal ? "TOTAL" : $segment;
+      $item := $getSegmentData($lookupSegment);
+      $brands := $isTotal ? [] : $getBrandsForSegment($segment);
+      $marginBottom := $isTotal ? false : true;
+
+      $baseRow := {
+        "portfolio": {
+          "marginBottom": $marginBottom,
+          "value": $isTotal ? "Total" : $segment
+        },
+        "volume_growth_contr": $cell($getField($item, "volume_growth_contr"), "%"),
+        "volume_weight": $cell($getField($item, "volume_weight"), "%"),
+        "volume_vs_ly": $cellVar(
+          $getField($item, "volume_ac_vs_ly"),
+          "%",
+          $getDirection($getField($item, "volume_ac_vs_ly"), $getField($item, "comp_volume_ac_vs_ly_direction"))
+        ),
+        "net_revenue_vs_ly": $cellVar(
+          $getField($item, "nr_ac_vs_ly"),
+          "%",
+          $getDirection($getField($item, "nr_ac_vs_ly"), $getField($item, "comp_nr_ac_vs_ly_direction"))
+        ),
+        "cores_vs_ly": $cellVar(
+          $getField($item, "cores_ac_vs_ly"),
+          "%",
+          $getDirection($getField($item, "cores_ac_vs_ly"), $getField($item, "comp_cores_ac_vs_ly_direction"))
+        ),
+        "brand_power_vs_ly": $cellVar(
+          $getField($item, "brand_power_pp"),
+          "pp",
+          $getDirection($getField($item, "brand_power_pp"), $getField($item, "comp_brand_power_pp_direction"))
+        ),
+        "sm_of_maco": $cell($getField($item, "sm_of_maco_ac"), "%"),
+        "sm_weight": $cell($getField($item, "sm_weight"), "%"),
+        "brands_vol_og_vs_ly": {
+          "brands": $ensureArray($brands),
+          "value": "_brands"
+        }
+      };
+
+      /* Add radius properties for Total row */
+      $isTotal ? {
+        "portfolio": $merge([$baseRow.portfolio, { "radiusRight": true, "radiusTop": true }]),
+        "volume_growth_contr": $merge([$baseRow.volume_growth_contr, { "radiusRight": true, "radiusTop": true }]),
+        "volume_weight": $merge([$baseRow.volume_weight, { "radiusRight": true, "radiusTop": true }]),
+        "volume_vs_ly": $merge([$baseRow.volume_vs_ly, { "radiusRight": true, "radiusTop": true }]),
+        "net_revenue_vs_ly": $merge([$baseRow.net_revenue_vs_ly, { "radiusRight": true, "radiusTop": true }]),
+        "cores_vs_ly": $merge([$baseRow.cores_vs_ly, { "radiusRight": true, "radiusTop": true }]),
+        "brand_power_vs_ly": $merge([$baseRow.brand_power_vs_ly, { "radiusRight": true, "radiusTop": true }]),
+        "sm_of_maco": $merge([$baseRow.sm_of_maco, { "radiusRight": true, "radiusTop": true }]),
+        "sm_weight": $merge([$baseRow.sm_weight, { "radiusRight": true, "radiusTop": true }]),
+        "brands_vol_og_vs_ly": $baseRow.brands_vol_og_vs_ly
+      } : $baseRow
+    )
+  };
+
+  /* Segments in display order; skip segments with no rows in overview datasource */
+  $segmentOrder := ["Megabrands", "Expansion", "Sustain", "Tail"];
+  $segmentHasData := function($segment) {(
+    $segmentLower := $lowercase($segment);
+    $count($performanceData[$lowercase(segment) = $segmentLower]) > 0
+      or $count($brandsData[$lowercase(segment) = $segmentLower]) > 0
+  )};
+  $segments := $filter($segmentOrder, function($segment) { $segmentHasData($segment) });
+
+  /* Build rows */
+  $regularRows := $map($segments, function($segment) { $buildRow($segment, false) });
+  $totalRow := $buildRow("Total", true);
+
+  /* Header configuration */
+  $headerConfig := [
+    {
+      "title": "Portfolio",
+      "id": "portfolio"
+    },
+    {
+      "title": "Volume",
+      "subtitle_field": "volume_month_refresh",
+      "children": [
+        {
+          "id": "volume_growth_contr",
+          "title": "Growth Contrib."
+        },
+        {
+          "id": "volume_weight",
+          "title": "Weight"
+        },
+        {
+          "id": "volume_vs_ly",
+          "title": "vs LY"
+        }
+      ]
+    },
+    {
+      "title": "Net Revenue",
+      "subtitle_field": "others_month_refresh",
+      "children": [
+        {
+          "id": "net_revenue_vs_ly",
+          "title": "vs LY"
+        }
+      ]
+    },
+    {
+      "title": "CORES",
+      "subtitle_field": "others_month_refresh",
+      "children": [
+        {
+          "id": "cores_vs_ly",
+          "title": "vs LY"
+        }
+      ]
+    },
+    {
+      "title": "Brand Power",
+      "subtitle_field": "others_period_refresh",
+      "children": [
+        {
+          "id": "brand_power_vs_ly",
+          "title": "vs LY"
+        }
+      ]
+    },
+    {
+      "title": "S&M",
+      "subtitle_field": "others_month_refresh",
+      "children": [
+        {
+          "id": "sm_of_maco",
+          "title": "% of MACO"
+        },
+        {
+          "id": "sm_weight",
+          "title": "Weight"
+        }
+      ]
+    },
+    {
+      "title": "Brands",
+      "children": [
+        {
+          "id": "brands_vol_og_vs_ly",
+          "title": "Vol OG Vs LY"
+        }
+      ]
+    }
+  ];
+
+  $getSubtitle := function($subtitleField) {(
+    $row := $performanceData[0];
+    $getField($row, $subtitleField)
+  )};
+
+  $header := $headerConfig[].{
+    "title": title,
+    "id": id,
+    "subtitle": $getSubtitle(subtitle_field),
+    "children": children
+  };
+
+  {
+    "header": $header,
+    "rows": [
+      [$regularRows],
+      [$totalRow]
+    ],
+    "splits": [
+      ["Portfolio"],
+      ["Volume"],
+      ["Net Revenue", "CORES", "Market Share", "Brand Power"],
+      ["S&M"],
+      ["Brands"]
+    ]
+  }
+)

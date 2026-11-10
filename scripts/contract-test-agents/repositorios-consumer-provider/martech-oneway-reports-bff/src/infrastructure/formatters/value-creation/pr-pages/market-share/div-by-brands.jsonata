@@ -1,0 +1,79 @@
+/* *
+ * 🔢 Div by Brands (Market Share)
+ * 🎯 Component: HorizontalBarChart with brand avatars
+ * 📍 Used on: Value Creation > PR Pages > Market Share > Div by Brands
+ * 🔄 Input: value-creation_pr-pages_market-share_div-by-brands
+ * 📤 Output: Bar chart with labels, datasets, brandsAvatar, comparisonLine and baseChartColors */
+(
+  $datasourceName := "value-creation_pr-pages_market-share_div-by-brands";
+  $data := $lookup(datasources, $datasourceName);
+  $config := {
+    "unitMeasure": "%",
+    "directionColors": { "up": "#49764B", "down": "#A20A0A" },
+    "othersLabel": "Others",
+    "segmentLabels": { "Mega Brand": "Megabrands", "Expansion Brand": "Expansion", "Sustain Brand": "Sustain", "Tail Brand": "Tail" },
+    "comparisons": [
+      { "title": "vs LY", "attribute": "vs_ly_pp", "withColor": true, "measure": "pp" },
+      { "title": "Vol. vs LY", "attribute": "vol_ac_vs_ly", "withColor": true }
+    ]
+  };
+  $isEmpty := $count($data) = 0;
+  $isValidNumber := function($value) { $type($value) = "number" };
+  $getDirectionColor := function($direction) { $lookup($config.directionColors, $direction) };
+  $getBrandLabel := function($item) {
+    $exists($item.raw_brand) and $type($item.raw_brand) != "null" and $item.raw_brand != "" ? $item.raw_brand : $config.othersLabel
+  };
+
+  $getSegmentLabel := function($segment) {
+    $exists($segment) and $type($segment) != "null"
+      ? (
+        $mapped := $lookup($config.segmentLabels, $segment);
+        $exists($mapped) ? $mapped : null
+      )
+      : null
+  };
+  $buildComparisonItem := function(
+    $item,
+    $comparison
+  ) {
+    (
+      $value := $lookup($item, $comparison.attribute);
+      $isValidNumber($value)
+        ? (
+          $measure := $exists($comparison.measure) ? $comparison.measure : $config.unitMeasure;
+          $baseItem := { "value": $formatNumber($value, "#,##0.0"), "measure": $measure };
+          $comparison.withColor ? $merge([$baseItem, { "color": $value >= 0 ? $config.directionColors.up : $config.directionColors.down }]) : $baseItem
+        )
+        : { "value": "-" }
+    )
+  };
+  $labels := $map($data, function($item) { $getBrandLabel($item) });
+  $dataValues := $map($data, function($item) { $isValidNumber($item.ac) ? $item.ac : 0 });
+  $backgroundColors := $map($data, function($item) { $getDirectionColor($item.variationDirectionAc) });
+  $formattedValues := $map($data, function($item) { $isValidNumber($item.ac) ? $formatNumber($abs($item.ac), "#,##0.0") : "-" });
+  $brandsAvatarData := $map(
+    $data,
+    function($item) {
+      {
+        "title": $getBrandLabel($item),
+        "mainBrand": { "src": $item.brand.imageSquare, "alt": $getBrandLabel($item) & " FLAG" }
+      }
+    }
+  );
+  $comparisonLines := $map(
+    $config.comparisons,
+    function($comparison) { { "title": $comparison.title, "data": $map($data, function($item) { $buildComparisonItem($item, $comparison) }) } }
+  );
+  $baseChartColorsData := $map($data, function($item) { $getSegmentLabel($item.segment) });
+  $isEmpty
+    ? { "empty": true }
+    : {
+      "period": $data[0].period_type,
+      "datasets": [{ "data": $dataValues, "backgroundColor": $backgroundColors }],
+      "labels": $labels,
+      "formattedData": [[$formattedValues]],
+      "brandsAvatar": { "data": $brandsAvatarData },
+      "comparisonLine": { "data": $comparisonLines },
+      "baseChartColors": [$baseChartColorsData]
+    }
+)

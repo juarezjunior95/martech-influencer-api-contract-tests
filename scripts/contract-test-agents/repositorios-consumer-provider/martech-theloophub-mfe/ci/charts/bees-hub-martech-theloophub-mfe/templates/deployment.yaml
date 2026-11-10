@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: martech-theloophub-mfe-service-account
+  labels:
+    account: martech-theloophub-mfe-service-account
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: martech-theloophub-mfe
+spec:
+  replicas: {{ .Values.pods.replicas }}
+  selector:
+    matchLabels:
+      app: martech-theloophub-mfe
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: martech-theloophub-mfe
+        release: {{ .Release.Name }}
+      annotations:
+        sidecar.istio.io/inject: {{ .Values.sidecar.enabled | quote }}
+    spec:
+      serviceAccountName: martech-theloophub-mfe-service-account
+      terminationGracePeriodSeconds: 180
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      imagePullSecrets:
+        - name: {{ .Values.acr.pullSecret }}
+      containers:
+        - name: martech-theloophub-mfe
+          image: 'beesmicroservices.azurecr.io/martech-theloophub-mfe:{{ .Chart.AppVersion }}'
+          imagePullPolicy: Always
+          ports:
+            - name: port-shell-app
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+            requests:
+              cpu: 500m
+              memory: 512Mi

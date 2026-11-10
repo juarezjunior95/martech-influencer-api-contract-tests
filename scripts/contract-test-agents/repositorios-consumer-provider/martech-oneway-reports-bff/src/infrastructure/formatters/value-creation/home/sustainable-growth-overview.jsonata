@@ -1,0 +1,283 @@
+/* *  
+* 🔢 VALUE HOME GROWTH BARS FORMATTER  
+* 🎯 Component: Value Home Growth Bars (Sustainable Growth)  
+* 📍 Used on: Value Home > Growth bars  
+* 🔄 Input: finance (volume, net_revenue, cores), non-finance (market_share, power)  
+* 📤 Output: Sustainable growth data with volume, netRevenue, cores, marketShare, brandPower  
+* 🔧 Config: direction, kpi_titles, measure, highlightLabels */ 
+( 
+  /* ─── Helpers ─── */ 
+
+  $volumeData := $exists(datasources.volume) ? datasources.volume : []; 
+  $financeData := $exists(datasources.finance) ? datasources.finance : []; 
+  $marketShareData := $exists(datasources.marketShare) ? datasources.marketShare : []; 
+  $brandPowerData := $exists(datasources.brandPower) ? datasources.brandPower : []; 
+  
+  $nonFinance := $exists(datasources.`non-finance`) ? datasources.`non-finance` : []; 
+
+  $isValidNumber := function($val) { $type($val) = "number" }; 
+  $formatValue := function($value) { $exists($value) and $isValidNumber($value) ? $formatNumber($value, "#,##0.0") : "-" };
+  
+  $formatFinanceValue := function($value) {
+    $exists($value) and $isValidNumber($value) ? (
+      $abs := $value >= 0 ? $value : -$value;
+      $abs >= 1e9 ? $formatNumber($value / 1e9, "#,##0.0") & "B" :
+      $abs >= 1e6 ? $formatNumber($value / 1e6, "#,##0.0") & "M" :
+      $abs >= 1000 ? $formatNumber($value / 1000, "#,##0.0") & "K" :
+      $formatNumber($value, "#,##0.0")
+    ) : "-"
+  };
+
+  $formatPercentValue := function($value) {
+    $exists($value) and $isValidNumber($value) ? $formatNumber($value, "#,##0.0") & "%" : "-"
+  };
+  
+  /* Period label from dt_ini and dt_end (months): "Jan-Dec'25" or "Jan'25" when same month */ 
+  $formatPeriodRange := function( 
+    $dtIni, 
+    $dtEnd 
+  ) { 
+    ($exists($dtIni) and $dtIni != "" and $exists($dtEnd) and $dtEnd != "" 
+      ? ( 
+        $start := $fromMillis($toMillis($dtIni), "[MNn,*-3]"); 
+        $end := $fromMillis($toMillis($dtEnd), "[MNn,*-3]'[Y01]"); 
+        $sameMonth := $fromMillis($toMillis($dtIni), "[Y01][M01]") = $fromMillis($toMillis($dtEnd), "[Y01][M01]"); 
+        $sameMonth ? $end : ($start & "-" & $end) 
+      ) 
+      : "-") 
+  };
+  /* Period label from dt_ini and dt_end (quarters): "Q1-Q4'25" or "Q1'25" when same quarter */ 
+  $formatPeriodRangeQuarters := function($dtIni, $dtEnd) { 
+    ($exists($dtIni) and $dtIni != "" and $exists($dtEnd) and $dtEnd != "" 
+      ? ( 
+        $monthIni := $number($fromMillis($toMillis($dtIni), "[M01]")); 
+        $monthEnd := $number($fromMillis($toMillis($dtEnd), "[M01]")); 
+        $qIni := $ceil($monthIni / 3); 
+        $qEnd := $ceil($monthEnd / 3); 
+        $yearIni := $fromMillis($toMillis($dtIni), "[Y01]"); 
+        $yearEnd := $fromMillis($toMillis($dtEnd), "[Y01]"); 
+        $sameQuarter := $qIni = $qEnd and $yearIni = $yearEnd; 
+        $sameQuarter ? ("Q" & $qIni & "'" & $yearEnd) : ("Q" & $qIni & "-Q" & $qEnd & "'" & $yearEnd) 
+      ) 
+      : "-") 
+  }; 
+  /* Bar label from dt_end and period: "YTD'22" */ 
+  $formatBarLabel := function( $dtEnd, $period) { 
+    (
+      $exists($dtEnd) and $dtEnd != "" 
+      ? ( 
+        $yearTwo := $fromMillis($toMillis($dtEnd), "[Y01]");
+        $exists($period) and $contains($period, "BU") ? $yearTwo & "'BU" : "'" & $yearTwo
+      ) 
+      : ""
+    ) 
+  }; 
+  /* Create config if not exists */ 
+  $config := $exists(config) 
+    ? config 
+    : { 
+      "direction": { "up": "positive", "down": "negative" }, 
+      "kpi_titles": { "volume": "Volume", "netRevenue": "Net Revenue", "cores": "CORES", "marketShare": "Market Share", "brandPower": "Brand Power" }, 
+      "default_measure": "[ % ]", 
+      "comparison_label": "vs", 
+      "comparison_ly": "LY", 
+      "comparison_bu": "BU", 
+      "comparison_line_title": "vs LY" 
+    }; 
+  /* Get rows for a KPI from finance or non-finance */ 
+  $getKpiRows := function($sourceArray, $kpiName) { $filter($sourceArray, function($item) { $lowercase($item.kpi_name) = $lowercase($kpiName) }) }; 
+  /* Build one KPI block (Whether data is from finance or not) */ 
+  
+  $buildKpiBlock :=  function( 
+    $rows, 
+    $outputKey, 
+    $title, 
+    $isFinanceData, 
+    $chartMeasure 
+  ) {
+    (
+      $hasData := $count($rows) > 0; 
+      $hasData ? 
+        $buildKpiBlockForData($rows, $outputKey, $title, $isFinanceData, $chartMeasure) : 
+        (
+          { 
+            "chartHeader": { "title": $title, "measure": $chartMeasure ?? $config.default_measure, "period": "" }, 
+            "bigNumberData": [],
+            "noticeMessage": "Data not available for this view. Try adjusting your filters."
+          }
+        );
+    )
+  };
+  $buildKpiBlockForData := function( 
+    $rows, 
+    $outputKey, 
+    $title, 
+    $isFinanceData, 
+    $chartMeasure 
+  ) { 
+    ( 
+      $hasData := $count($rows) > 0; 
+      $firstRow := $rows[0]; 
+      $lastRow := $rows[$count($rows) - 1]; 
+
+      $formatAc := $outputKey = "volume" or $outputKey = "netRevenue" or $outputKey = "cores" 
+        ? $formatFinanceValue 
+        : $formatPercentValue;
+
+      $formatVariation := $formatValue;
+
+      /* Period label from last row (quarters for Brand Power, months otherwise) */ 
+      $periodLabel := $outputKey = "brandPower" 
+        ? $formatPeriodRangeQuarters($lastRow.dt_ini, $lastRow.dt_end) 
+        : $formatPeriodRange($lastRow.dt_ini, $lastRow.dt_end); 
+      $chartHeaderMeasure := $exists($chartMeasure) ? $chartMeasure : ($exists($firstRow.unit_of_measure) ? "[ " & $firstRow.unit_of_measure & " ]" : $config.default_measure);
+      $compMeasure := $firstRow.comp_unit_of_measure ?? "%"; 
+      $bigNumberLy := $hasData 
+        ? ( 
+          $trendLy := $lookup($config.direction, $lastRow.variationDirectionVsLy); 
+          { 
+            "value": $formatVariation($lastRow.ac_vs_ly), 
+            "measure": $compMeasure, 
+            "trend": $trendLy 
+          } 
+        ) 
+        : { "value": "-", "measure": undefined }; 
+      $bigNumberBu := (
+        $trendBu := $hasData ? $lookup($config.direction, $lastRow.variationDirectionVsBu) : undefined; 
+        {
+          "value": $formatVariation($lastRow.ac_vs_bu), 
+          "measure": $lastRow.comp_unit_of_measure,
+          "trend": $trendBu
+        }
+      ); 
+      $barLabels := $rows.($formatBarLabel(dt_end, period));
+      $barData := $isFinanceData ? (
+        $map($rows, function($rowData, $index) {
+          $index = $count($row) - 2 ?
+            $rowData.ac_vs_bu :
+            $rowData.ac
+        })
+      ) : $rows.ac; 
+      $formattedBarData := [[$rows.($formatAc(ac))]]; 
+      $comparisonLineData := $hasData ?  
+        $map( 
+          $rows, 
+          function($row) { 
+            (
+              $value := $formatVariation($row.ac_vs_ly);
+              { 
+                "value": $value, 
+                "measure": $value = "-" ? "": $compMeasure, 
+                "trend": $exists($row.variationDirectionVsLy) and $value != "-" ? 
+                  $lookup($config.direction, $row.variationDirectionVsLy) 
+                  : "" 
+              } 
+            )
+          } 
+        )  
+        : []; 
+       
+      $bigNumberDataItems := $isFinanceData 
+        ?  
+          [ 
+            { 
+              "bigNumber": $bigNumberLy, 
+              "comparison": { "label": $config.comparison_label, "value": $config.comparison_ly } 
+            }, 
+            { 
+              "bigNumber": $bigNumberBu, 
+              "comparison": { "label": $config.comparison_label, "value": $config.comparison_bu } 
+            } 
+          ] 
+        :  
+          [ 
+            { 
+              "bigNumber": $bigNumberLy, 
+              "comparison": { "label": $config.comparison_label, "value": $config.comparison_ly } 
+            } 
+          ]; 
+      $barChart := $hasData ? { 
+          "highlightLabels": [$barLabels[-1]], 
+          "labels": $barLabels, 
+          "datasets": [{ "label": "Dataset 1", "data": $barData }], 
+          "formattedData": $formattedBarData, 
+          "stripedIndexes": $isFinanceData ? [$count($rows) - 2] : undefined, 
+          "roundedArrow": {   
+                  "comparison": $lastRow.average_line,   
+                  "direction": $lastRow.variationDirectionAverageLine,   
+                  "unit_of_measure": $compMeasure, 
+                  "prefix": $isFinanceData ? "CAGR: " : undefined 
+          }  
+        } : undefined; 
+      $baseBlock := { 
+        "chartHeader": { "title": $title, "measure": $chartHeaderMeasure, "period": $periodLabel }, 
+        "bigNumberData": $bigNumberDataItems, 
+        "barChart": $barChart, 
+        "comparisonLine": { 
+          "data": [ 
+            {  
+              "title": $config.comparison_line_title,  
+              "data": $comparisonLineData  
+            } 
+          ] 
+        } 
+      }; 
+      $hasData ? $baseBlock : $merge([$baseBlock, { "noticeMessage": "No data available for this KPI" }]) 
+    ) 
+  }; 
+ 
+  /* KPI definitions: outputKey, kpi_name, title, rows, isFinanceData, chartMeasure (override for chartHeader.measure) */ 
+  $allKpis := [ 
+    { 
+      "outputKey": "volume", 
+      "kpiName": "volume", 
+      "title": $config.kpi_titles.volume, 
+      "rows": $volumeData, 
+      "isFinanceData": true, 
+      "chartMeasure": "[ k hl ]" 
+    },
+    { 
+      "outputKey": "netRevenue", 
+      "kpiName": "net_revenue", 
+      "title": $config.kpi_titles.netRevenue, 
+      "rows": $getKpiRows($financeData, "nr"), 
+      "isFinanceData": true, 
+      "chartMeasure": "[ $Mio ]" 
+    },
+    { 
+      "outputKey": "cores", 
+      "kpiName": "cores", 
+      "title": $config.kpi_titles.cores, 
+      "rows": $getKpiRows($financeData, "cores"), 
+      "isFinanceData": true, 
+      "chartMeasure": "[ $Mio ]" 
+    },
+    { 
+      "outputKey": "marketShare", 
+      "kpiName": "market_share", 
+      "title": $config.kpi_titles.marketShare, 
+      "rows": $marketShareData, 
+      "isFinanceData": false 
+    },
+    { 
+      "outputKey": "brandPower", 
+      "kpiName": "power", 
+      "title": $config.kpi_titles.brandPower, 
+      "rows": $brandPowerData, 
+      "isFinanceData": false 
+    } 
+  ];
+ 
+  /* Build final object: always all 5 keys */ 
+  $reduce( 
+    $allKpis, 
+    function( 
+      $acc, 
+      $kpiDef 
+    ) { 
+      $merge([$acc, { ($kpiDef.outputKey): $buildKpiBlock($kpiDef.rows, $kpiDef.outputKey, $kpiDef.title, $kpiDef.isFinanceData, $kpiDef.chartMeasure) }]) 
+    }, 
+    {} 
+  ) 
+) 
+ 

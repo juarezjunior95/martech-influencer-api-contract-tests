@@ -1,0 +1,128 @@
+/* *
+ * 🔢 Bar charts - Brands by Segments
+ * 🎯 Component: Bar
+ * 📍 Used on: Volume Pages - Global Moves
+ * 🔄 Input: datasource (dt_ini, dt_end, period, ac, ac_vs_ly, ac_vs_bu, unit_of_measure, comp_unit_of_measure)
+ * 📤 Output: Bar chart interface */
+
+(
+  $ds := $keys($.datasources)[0];
+  $rawData := $.datasources.$lookup($ds);
+  $data := $rawData;
+  $empty := $count($data) = 0;
+
+  $compUnitOfMeasure := $data[0].comp_unit_of_measure ? $data[0].comp_unit_of_measure : "%";
+
+  $config := {
+    "direction": {
+      "up": "#007800",
+      "down": "#B91C1C"
+    },
+    "comparisons": [
+      {
+        "title": "vs LY",
+        "field": "ac_vs_ly",
+        "unitMeasure": $compUnitOfMeasure
+      },
+      {
+        "title": "vs BU",
+        "field": "ac_vs_bu",
+        "unitMeasure": $compUnitOfMeasure
+      }
+    ],
+    "legend": [
+      {
+        "color": "#EDDAB1",
+        "label": "Previous Year",
+        "shape": "thinPill"
+      },
+      {
+        "color": "#99D6FF",
+        "label": "Budget",
+        "shape": "thinPill"
+      },
+      {
+        "color": "#D1A33C",
+        "label": "Current Year",
+        "shape": "thinPill"
+      }
+    ]
+  };
+
+  $buIndex := $count($data) - 2;
+  $backgroundColor := $map($data, function($d, $i) {
+    ($i = $count($data) - 1) ? "#d1a33c" : "#eddab1"
+  });
+
+  $formatAbreviatedNumber := function($num) {
+    $abs($num) >= 1000000000
+      ? $string($formatNumber($round($num / 1000000000, 1), "###.0")) & "B"
+      : $abs($num) >= 1000000
+        ? $string($formatNumber($round($num / 1000000, 1), "###.0")) & "M"
+        : $abs($num) >= 1000
+          ? $string($formatNumber($round($num / 1000, 1), "###.0")) & "k"
+          : $string($formatNumber($num, "###.0"))
+  };
+
+  $formattedData := $map($data, function($barData, $index) { 
+    $formatAbreviatedNumber($barData.ac)
+  });
+
+  $formatPeriodLabel := function($period) {(
+    $contains($period, "'")
+      ? (
+        $yearDigits := $substringAfter($period, "'");
+        $year := $length($yearDigits) = 2 ? "20" & $yearDigits : $period;
+        $substring($period, 0, 3) = "BU'" ? $year & "'BU" : $year
+      )
+      : $period
+  )};
+
+  $labels := $map($data, function($d) { $formatPeriodLabel($d.period) });
+
+  $comparisons := $map(
+    $config.comparisons,
+    function($comparison) {
+      {
+        "title": $comparison.title,
+        "data": $append([], $map(
+          $data,
+          function($barData) {
+            (
+              $val := $lookup($barData, $comparison.field);
+              $val != null
+              ? {
+                  "value": $formatNumber($val, "#,##0.0"),
+                  "measure": $comparison.unitMeasure,
+                  "color": $val >= 0 ? $config.direction.up : $config.direction.down
+                }
+              : { "value": "-" }
+            )
+          }
+        ))
+      }
+    }
+  );
+
+  $filtered := $filter($data, function($d) { $not($substring($d.period, 0, 3) = "BU'") });
+  $period := $count($filtered) > 0 ? $substringBefore($filtered[0].period, "'") : "YTD";
+
+  $empty
+    ? { "empty": true }
+    : { 
+      "period": $period ? $period : "YTD",
+      "legend": $config.legend,
+      "datasets": [
+        {
+          "data": $data.ac,
+          "backgroundColor": $backgroundColor
+        }
+      ],
+      "labels": $labels,
+      "formattedData": [[$formattedData]],
+      "stripedIndexes": [ $buIndex ],
+      "comparisonLine": {
+        "data": [$comparisons]
+      }
+    }
+)

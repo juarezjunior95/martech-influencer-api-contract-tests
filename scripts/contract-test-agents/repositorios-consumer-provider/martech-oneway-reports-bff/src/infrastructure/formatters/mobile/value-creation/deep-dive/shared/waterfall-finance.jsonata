@@ -1,0 +1,87 @@
+(
+  $tone := function($value, $direction) {
+    ($not($exists($value)) or $value = null) ? "neutral" :
+    $exists($direction)
+      ? ($lowercase($direction) = "up" ? "positive" : "negative")
+      : ($value >= 0 ? "positive" : "negative")
+  };
+
+  $rowType := function($value, $index, $lastIndex) {
+    $index = 0 ? "start" :
+    $index = $lastIndex ? "end" :
+    ($value > 0 ? "positive" : ($value < 0 ? "negative" : "neutral"))
+  };
+
+  $labelValueText := function($lv) {
+    $not($exists($lv)) ? null :
+    $type($lv) = "array" ? ($count($lv) > 0 ? $lv[0] : null) :
+    $lv
+  };
+
+  $label := function($row) {
+    $row.step_name ? $row.step_name :
+    $row.raw_brand ? $row.raw_brand :
+    $row.brand ? $row.brand :
+    $row.country ? $row.country :
+    $labelValueText($row.label_value) ? $labelValueText($row.label_value) :
+    $row.period ? $row.period :
+    "-"
+  };
+
+  $formatBar := function($v) {
+    (
+      $not($exists($v)) or $type($v) != "number"
+        ? "-"
+        : (
+            $abs := $v < 0 ? -$v : $v;
+            $abs >= 1e9 ? ($formatNumber($v / 1e9, "#,##0.0") & "B") :
+            $abs >= 1e6 ? ($formatNumber($v / 1e6, "#,##0.0") & "M") :
+            $abs >= 1000 ? ($formatNumber($v / 1000, "#,##0.0") & "K") :
+            $formatNumber($v, "#,##0.0")
+          )
+    )
+  };
+
+  $raw := datasources.waterfall;
+  $rows := $ensureArray(
+    $exists($raw.large) and $count($raw.large) > 0 ? $raw.large :
+    $exists($raw.small) and $count($raw.small) > 0 ? $raw.small :
+    $raw
+  );
+  $lastIndex := $count($rows) - 1;
+  $firstRow := $count($rows) > 0 ? $rows[0] : {};
+  $hasData := $count($rows) > 0;
+
+  $title := (
+    $key := $lowercase($string($firstRow.kpi ? $firstRow.kpi : $firstRow.kpi_name));
+    $key = "nr" or $key = "net_revenue" or $key = "net-revenue" ? "Net Revenue" :
+    $key = "cores" ? "CORES" :
+    "Volume"
+  );
+
+  $base := {
+    "chartHeader": {
+      "title": $title,
+      "period": $exists($firstRow.dt_end) ? $formatPeriodChip($firstRow.dt_ini, $firstRow.dt_end, $firstRow.period) : "",
+      "measure": $exists($firstRow.unit_of_measure) ? $firstRow.unit_of_measure : ""
+    },
+    "rows": [$map($rows, function($row, $index) {
+      (
+        $value := $exists($row.ac) ? $row.ac : 0;
+        $delta := $exists($row.ac_vs_ly) ? $row.ac_vs_ly : 0;
+        {
+          "title": $label($row),
+          "type": $rowType($value, $index, $lastIndex),
+          "value": $value,
+          "formattedBarLabel": $formatBar($value),
+          "formattedDelta": $formatPercentValue($delta, $row.comp_unit_of_measure ? $row.comp_unit_of_measure : "%"),
+          "deltaTone": $tone($delta, $row.variationDirectionVsLy)
+        }
+      )
+    })]
+  };
+
+  $hasData
+    ? $base
+    : $merge([$base, { "noticeMessage": "Data not available" }])
+)

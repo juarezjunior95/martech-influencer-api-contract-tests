@@ -1,0 +1,148 @@
+/* *
+ * 🔢 Waterfall charts (v2)
+ * 🎯 Component: Waterfall
+ * 📍 Used on: Volume Pages
+ * 🔄 Input: datasource (country as object, delta, ac_vs_ly, ac_vs_bu, rnk, dt_end)
+ * 📤 Output: Waterfall chart — total rows rnk 0/99: MTD → month'year ($formatDateToMonth); YTD → YTD'YY from dt_end */
+(
+  $ds := $keys($.datasources)[0];
+  $config := {
+    "legend": [
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "color": "#49764B",
+        "icon": "TrendingUp"
+      },
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "color": "#A20A0A",
+        "icon": "TrendingDown"
+      }
+    ],
+    "comparisons": [
+      {
+        "title": "vs LY",
+        "attribute": "ac_vs_ly",
+        "direction_field": "variationDirectionVsLy",
+        "unitMeasure": "%",
+        "empty_rnks": [0]
+      },
+      {
+        "title": "vs BU",
+        "attribute": "ac_vs_bu",
+        "direction_field": "variationDirectionVsBu",
+        "unitMeasure": "%",
+        "empty_rnks": [0]
+      }
+    ]
+  };
+
+  $rawData := $.datasources.$lookup($ds);
+  $empty := $count($rawData) = 0;
+
+  $sorted := $sort($rawData, function($a, $b) { $a.rnk > $b.rnk });
+
+  $data := $map($sorted, function($item) {
+    $merge([$item, {
+      "computed_key": $item.country_iso_code_3 & "|" & $string($item.rnk)
+    }])
+  });
+
+  $keys := $data.computed_key;
+
+  $getLabel := function($item) {
+    $item.rnk = 0 or $item.rnk = 99
+      ? (
+        $lowercase($string($item.period_type)) = "ytd"
+          ? (
+            $dtStr := $string($item.dt_end);
+            $match($dtStr, /^\d{4}-\d{2}-\d{2}/)
+              ? "YTD'" & $substring($dtStr, 2, 2)
+              : "-"
+          )
+          : $formatDateToMonth($item.dt_end)
+      )
+      : $item.country_iso_code_3
+  };
+
+  $datasetData := $map(
+    $keys,
+    function($key) {
+      $safeNumber($data[computed_key = $key][0].delta)
+    }
+  );
+
+  $formattedData := $map(
+    $datasetData,
+    function($datapoint) {
+      $formatCompactNumber($datapoint)
+    }
+  );
+
+  $responseLabels := $map(
+    $keys,
+    function($key) {
+      $getLabel($data[computed_key = $key][0])
+    }
+  );
+
+  $labelsAvatar := $map(
+    $keys,
+    function($key) {
+      (
+        $item := $data[computed_key = $key][0];
+        {
+          "title": $getLabel($item),
+          "mainBrand": {
+            "src": $item.country.imageIcon,
+            "alt": $item.country_iso_code_3 & " FLAG"
+          }
+        }
+      )
+    }
+  );
+
+  $comparisonLines := $map(
+    $config.comparisons,
+    function($comparison) {
+      {
+        "title": $comparison.title,
+        "data": $map(
+          $keys,
+          function($key) {
+            (
+              $item := $data[computed_key = $key][0];
+              $shouldBeEmpty := $count($filter($comparison.empty_rnks, function($r) { $item.rnk = $r })) > 0;
+              $shouldBeEmpty
+                ? { "value": "" }
+                : (
+                  $rawValue := $lookup($item, $comparison.attribute);
+                  $not($exists($item)) or $rawValue = null or $rawValue = "-" or $not($exists($rawValue))
+                    ? { "value": "-" }
+                    : {
+                        "value": $formatValue($rawValue),
+                        "measure": $comparison.unitMeasure,
+                        "trend": $getTrend($rawValue, $lookup($item, $comparison.direction_field))
+                      }
+                )
+            )
+          }
+        )
+      }
+    }
+  );
+
+  $empty
+    ? { "empty": true }
+    : {
+      "period": $data[0].period_type,
+      "values": [$datasetData],
+      "formattedData": [[$formattedData]],
+      "labels": $responseLabels,
+      "brandsAvatar": { "data": $labelsAvatar },
+      "comparisonLine": { "data": $comparisonLines },
+      "legend": $config.legend
+    }
+)

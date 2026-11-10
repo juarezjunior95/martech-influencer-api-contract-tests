@@ -1,0 +1,218 @@
+/**
+ * 🔢 INNOVATION BREAKDOWN FORMATTER
+ * 🎯 Component: Innovation Breakdown Chart
+ * 📍 Used on: Innovation > Performance > Breakdown
+ * 🔄 Input: innovation_innovation_performance-breakdown_breakdown data
+ * 📤 Output: InnovationBreakdownData interface
+ */
+
+(
+  /* Get datasource key dynamically */
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+  $kpi := $data[0].kpi_name;
+  $isGlobal := $data[0].brand = "N/A";
+  $isEmpty := $count($data) = 0;
+
+  /* Configuration - use config from input if available, otherwise use defaults */
+  $config := {
+    "direction": {
+      "up": "#007800",
+      "down": "#B91C1C"
+    },
+    "variation": {
+      "unit_measure_percent": "%"
+    },
+    "kpi_name_prefix": {
+      "innovation_volume": "Vol.",
+      "innovation_nr": "Revenue",
+      "innovation_maco": "MACO"
+    },
+    "viewtype_config": {
+      "global": {
+        "key": "country",
+        "image_key": "country_flag"
+      },
+      "country": {
+        "key": "brand",
+        "image_key": "brand_image"
+      }
+    }
+  };
+  $viewtypeConfig := $isGlobal ?
+   $config.viewtype_config.global
+   : $config.viewtype_config.country;
+
+  /* Format number to string with one decimal */
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number" ?
+        $formatNumber($value, '#,##0.0')
+        : "-"
+  };
+
+  /* Get direction color */
+  $getDirectionColor := function($direction) {
+    $lookup($config.direction, $direction)
+  };
+
+  $isEmpty
+    ? { "empty": true }
+    : (
+      /* Create data array */
+      $lyBar := $data[0].le_ly_total ?: 0;
+      $expirationBar := $data[0].expiration ?: 0;
+      $hasExpiration := $expirationBar != 0;
+      $baselineBar := $data[0].baseline ?: 0;
+      $hasBaseline := $baselineBar != 0;
+      $totalBar := $data[0].le_total ?: 0;
+      $leDataArray := $data.(le = null ? 0 : le);
+      $dataArray := [$lyBar];
+      $dataArray := $hasExpiration ? $append($dataArray, $expirationBar) : $dataArray;
+      $dataArray := $hasBaseline ? $append($dataArray, $baselineBar) : $dataArray;
+      $dataArray := $append($dataArray, $leDataArray);
+      $dataArray := $append($dataArray, $totalBar);
+
+      /* Build labels array */
+      $currentDate := $data[0].dt_end;
+      $cyLabel := $substring($currentDate, 0, 4);
+      $lyLabel := $string($number($cyLabel) - 1);
+      $mappedLabelsArray := $map(
+        $data,
+        function($dataPoint) {
+          $lookup($dataPoint, $viewtypeConfig.key)
+        }
+      );
+      $labelsArray := [$lyLabel];
+      $labelsArray := $hasExpiration ? $append($labelsArray, "Expiration") : $labelsArray;
+      $labelsArray := $hasBaseline ? $append($labelsArray, "Baseline") : $labelsArray;
+      $labelsArray := $append($labelsArray, $mappedLabelsArray);
+      $labelsArray := $append($labelsArray, $cyLabel);
+
+      $kpiPrefix := $lookup($config.kpi_name_prefix, $kpi);
+
+      $emptyComparisonPoint := {
+        "value": "",
+        "measure": "",
+        "color": ""
+      };
+      $comparisonData := $map($data, function($dataPoint) {
+        (
+          $vsLyValue := $formatValue($dataPoint.le_vs_ly);
+          $vsLyDirection := $dataPoint.le_vs_ly_direction;
+
+          $growthContValue := $formatValue($dataPoint.growth_cont);
+          $growthContDirection := $dataPoint.growth_cont_direction;
+
+          $vsBuValue := $formatValue($dataPoint.le_vs_bu);
+          $vsBuDirection := $dataPoint.le_vs_bu_direction;
+
+          {
+            "vs_ly": {
+              "value": $vsLyValue,
+              "measure": $vsLyValue != "-" ? $config.variation.unit_measure_percent : "",
+              "color": $vsLyValue != "-" ? $getDirectionColor($vsLyDirection) : ""
+            },
+            "growth_cont": {
+              "value": $growthContValue,
+              "measure": $growthContValue != "-" ? $config.variation.unit_measure_percent : "",
+              "color": $growthContValue != "-" ? $getDirectionColor($growthContDirection) : ""
+            },
+            "vs_bu" : {
+              "value": $vsBuValue,
+              "measure": $vsBuValue != "-" ? $config.variation.unit_measure_percent : "",
+              "color": $vsBuValue != "-" ? $getDirectionColor($vsBuDirection) : ""
+            }
+         }
+        )
+      });
+
+      /* Build comparison line data */
+      $buildComparisonData := function($comparisonArray) {
+        (
+          $result := $emptyComparisonPoint;
+          $result := $hasExpiration ? $append($result, $emptyComparisonPoint) : $result;
+          $result := $hasBaseline ? $append($result, $emptyComparisonPoint) : $result;
+          $result := $append($result, $comparisonArray);
+          $append($result, $emptyComparisonPoint)
+        )
+      };
+      $comparisonLineData := [
+        {
+          "title": $kpiPrefix & " % vs LY",
+          "data": $buildComparisonData($comparisonData.vs_ly)
+        },
+        {
+          "title": $kpiPrefix & " Growth Contrib.",
+          "data": $buildComparisonData($comparisonData.growth_cont)
+        },
+        {
+          "title": $kpiPrefix & " % vs BU",
+          "data": $buildComparisonData($comparisonData.vs_bu)
+        }
+      ];
+
+      /* Build brands images array */
+      $brandsImg :=
+        $map($data,
+        function($dataPoint) {
+        (
+          {
+            "mainBrand": {
+              "src": $lookup($dataPoint, $viewtypeConfig.image_key),
+              "alt": $lookup($dataPoint, $viewtypeConfig.key)
+            },
+            "title": $lookup($dataPoint, $viewtypeConfig.key)
+          }
+        )
+      });
+      $expirationBrandImg := {
+        "mainBrand": {
+          "src": "",
+          "alt": "Expiration"
+        },
+        "title": "Expiration"
+      };
+      $baselineBrandImg := {
+        "mainBrand": {
+          "src": "",
+          "alt": "Baseline"
+        },
+        "title": "Baseline"
+      };
+      $tempBrandsImg := [];
+      $tempBrandsImg := $hasExpiration ? $append($tempBrandsImg, $expirationBrandImg) : $tempBrandsImg;
+      $tempBrandsImg := $hasBaseline ? $append($tempBrandsImg, $baselineBrandImg) : $tempBrandsImg;
+      $tempBrandsImg := $append($tempBrandsImg, $brandsImg);
+      $brandsImg := $tempBrandsImg;
+
+      /* Build labels data with special indexes */
+      $labelsData := $map($labelsArray, function($label, $index) {
+        (
+          $isFirst := $index = 0;
+          $isRetained := $label = "Baseline";
+          {
+            "label": $label,
+            "first": $isFirst,
+            "retained": $isRetained,
+            "index": $index
+          }
+        )
+      });
+
+      $retainedIndex := $labelsData[retained = true].index;
+      $specialIndexes := {
+        "first": $labelsData[first = true].index,
+        "last": $count($dataArray) - 1,
+        "retained": $exists($retainedIndex) ? $retainedIndex : -1
+      };
+
+      {
+        "data": $dataArray,
+        "labels": $labelsArray,
+        "specialIndexes": $specialIndexes,
+        "comparisonLineData": $comparisonLineData,
+        "brandsImg": $brandsImg
+      }
+    )
+)
+

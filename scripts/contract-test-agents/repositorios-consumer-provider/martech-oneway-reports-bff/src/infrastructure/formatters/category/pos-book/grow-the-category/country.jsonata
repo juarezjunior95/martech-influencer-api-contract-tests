@@ -1,0 +1,141 @@
+/**
+ * 🔢 COUNTRY FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: Category > POS Book > Grow the Category > Country
+ * 🔄 Input: category_pos-book_grow-the-category_country data
+ * 📤 Output: Country participation table with header and rows grouped by maturity
+ * 🔧 Config: color_dict for category colors
+ * 📌 Logic: Based on pos_kpi filter (participation, occasions, servings)
+ */
+
+(
+  $dsKey := $keys(datasources)[0];
+  $data := $lookup(datasources, $dsKey);
+  $isEmpty := $count($data) = 0;
+  $kpiName := ($isEmpty = false and $data[0] and $data[0].kpi_name) ? $data[0].kpi_name : "occasion";
+
+  $categoriesRaw := $distinct($data.category);
+  
+  $normalizeCategory := function($name) {
+    $name = "Alcohool" ? "Alcohol" : $name
+  };
+  
+  $categories := $map($categoriesRaw, $normalizeCategory);
+  
+  $toCategoryId := function($name) {
+    $lowercase($replace($normalizeCategory($name), " ", "_"))
+  };
+  
+  $categoryIds := $map($categoriesRaw, $toCategoryId);
+
+  $colorDict := {
+    "alcohol": "#C9D1D6",
+    "beer": "#F0DF78",
+    "beyond_beer": "#EEC879",
+    "spirits": "#A1CFF4",
+    "wine": "#F6B7D0"
+  };
+  
+  $getColor := function($category) {
+    $lookup($colorDict, $toCategoryId($category))
+  };
+
+  $chartUnitMeasure := $kpiName = "p4w" ? "%" : " ";
+  $variationMeasure := $kpiName = "p4w" ? "pp" : " ";
+
+  $getMaxForCategory := function($categoryName) {
+    (
+      $categoryData := $filter($data, function($item) { $item.category = $categoryName });
+      $acValues := $map($categoryData, function($item) { 
+        $type($item.ac) = "number" ? $item.ac : 0 
+      });
+      $validValues := $filter($acValues, function($val) { $type($val) = "number" });
+      $maxAc := $count($validValues) > 0 ? $max($validValues) : 0;
+      $maxAc > 0 ? $maxAc * 1.5 : 100
+    )
+  };
+
+  $distinctMaturities := $distinct($data.maturity);
+
+  $buildCountryRow := function($countryData, $maturityLabel) {
+    (
+      $countryCode := ($countryData[0] and $countryData[0].country_iso_code_3 = "ABI") ? "Global" : ($countryData[0] ? $countryData[0].country_iso_code_3 : null);
+      $merge([
+        {
+          "label": { "value": $maturityLabel, "noChart": true, "merge": true },
+          "country": { "value": $countryCode, "noChart": true }
+      },
+        $merge($map($categoriesRaw, function($categoryRaw, $idx) {
+          (
+            $categoryItem := $filter($countryData, function($item) { $item.category = $categoryRaw })[0];
+            $categoryId := $categoryIds[$idx];
+            $maxValue := $getMaxForCategory($categoryRaw);
+            {
+              ($categoryId): $categoryItem ? {
+                "chartData": {
+                  "data": [$formatValue($categoryItem.ac)],
+                  "backgroundColor": [$getColor($categoryRaw)],
+                  "chartUnitMeasure": $chartUnitMeasure
+                },
+                "variation": $formatValue($categoryItem.ac_vs_ly),
+                "variationMeasure": $variationMeasure,
+                "chartScaleMax": $maxValue
+              } : {
+                "chartData": {
+                  "data": [0],
+                  "backgroundColor": [$getColor($categoryRaw)],
+                  "chartUnitMeasure": $chartUnitMeasure
+                },
+                "variation": 0,
+                "variationMeasure": $variationMeasure,
+                "chartScaleMax": $maxValue
+              }
+            }
+          )
+        }))
+      ])
+    )
+  };
+
+  $buildRows := function() {
+    $map($distinctMaturities, function($maturity) {
+      (
+        $maturityData := $filter($data, function($item) { $item.maturity = $maturity });
+        $distinctCountries := $distinct($maturityData.country_iso_code_3);
+        $maturityLabel := $maturity = "N/A" ? " " : $maturity;
+        
+        $map($distinctCountries, function($country) {
+          (
+            $countryData := $filter($maturityData, function($item) { $item.country_iso_code_3 = $country });
+            $buildCountryRow($countryData, $maturityLabel)
+          )
+        })
+      )
+    })
+  };
+
+  $labelHeader := {
+    "title": "Label",
+    "children": [
+      { "title": "Label", "id": "label" },
+      { "title": "Country", "id": "country" }
+    ]
+  };
+  
+  $categoryHeaders := $map($categoriesRaw, function($categoryRaw, $idx) {
+    { 
+      "title": $normalizeCategory($categoryRaw), 
+      "id": $categoryIds[$idx],
+      "backgroundColor": $getColor($categoryRaw)
+    }
+  });
+  
+  $header := $append([$labelHeader], $categoryHeaders);
+
+  $isEmpty
+    ? { "empty": true }
+    : {
+        "header": $header,
+        "rows": $buildRows()
+      }
+)

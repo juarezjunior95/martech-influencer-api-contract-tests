@@ -1,0 +1,45 @@
+/* *
+ * 🔍 DEEP DIVE SALES FORMATTER
+ * 🎯 Component: Table
+ * 📍 Used on: Example > Sales > Deep Dive
+ * 🔄 Input: sales datasource
+ * 📤 Output: Comprehensive sales analysis with grouping */
+(
+  $datasource_sales := $lookup($$.datasources, "sales");
+  $total_sales := $sum($datasource_sales.sales);
+  $total_units := $sum($datasource_sales.units);
+  $average_price := $round($total_sales / $total_units, 2);
+
+  {
+    "summary": {
+      "totalSales": $total_sales,
+      "totalUnits": $total_units,
+      "averagePrice": $average_price
+    },
+    "byProduct": $datasource_sales.(
+      {
+        "product": product,
+        "sales": sales,
+        "units": units,
+        "country": country,
+        "category": category
+      }
+    ),
+    "byCountry": $datasource_sales[$distinct(country)].(
+      {
+        "country": $,
+        "totalSales": $sum($datasource_sales[country = $].sales),
+        "totalUnits": $sum($datasource_sales[country = $].units),
+        "averagePrice": $round($sum($datasource_sales[country = $].sales) / $sum($datasource_sales[country = $].units), 2)
+      }
+    ),
+    "byCategory": $datasource_sales[$distinct(category)].(
+      {
+        "category": $,
+        "totalSales": $sum($datasource_sales[category = $].sales),
+        "totalUnits": $sum($datasource_sales[category = $].units),
+        "averagePrice": $round($sum($datasource_sales[category = $].sales) / $sum($datasource_sales[category = $].units), 2)
+      }
+    )
+  }
+)

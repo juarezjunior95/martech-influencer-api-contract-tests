@@ -1,0 +1,152 @@
+/**
+ * 🎯 Component: category overview — growth levers (Portfolio Performance)
+ * 📍 Used on: Value Creation > overview (category)
+ * 🔄 Input: components[0].data.datasources | $.datasources (keys in $dsKeys)
+ * 📤 Output: { "growthLevers": Lever[] } — each lever: title, versus, kpi_name, dateRefresh, kpi { header, rows }, optional footerInfo
+ * ℹ️ MFE/query wrappers (e.g. { loading, error, data }) are applied outside this expression; `data` is this object.
+ */
+(
+  $datasources := $exists($.components) and $count($.components) > 0 ? $.components[0].data.datasources : $.datasources;
+
+  $ensureArray := function($value) {
+    $type($value) = "array"
+      ? $value
+      : ($exists($value) and $value != null ? [$value] : [])
+  };
+
+  $dsKeys := [
+    "value-creation_portfolio-performance_overview_category-growth-levers_beer-participation",
+    "value-creation_portfolio-performance_overview_category-growth-levers_superior-core",
+    "value-creation_portfolio-performance_overview_category-growth-levers_occasions-development",
+    "value-creation_portfolio-performance_overview_category-growth-levers_premiumization",
+    "value-creation_portfolio-performance_overview_category-growth-levers_beyond-beer"
+  ];
+
+  $config := {
+    "value-creation_portfolio-performance_overview_category-growth-levers_beer-participation": {
+      "title": "Beer Participation",
+      "mixTitle": "TT ABI",
+      "vsUnit": "pp",
+      "useAc": true,
+      "labelMap": { "p7d": "P7D", "p4w": "P4W" },
+      "footerInfo": null
+    },
+    "value-creation_portfolio-performance_overview_category-growth-levers_superior-core": {
+      "title": "Superior Core",
+      "mixTitle": "MIX",
+      "vsUnit": "%",
+      "useAc": false,
+      "labelMap": { "volume": "Vol", "nr": "NR" },
+      "footerInfo": null
+    },
+    "value-creation_portfolio-performance_overview_category-growth-levers_occasions-development": {
+      "title": "Balanced Choices",
+      "mixTitle": "MIX",
+      "vsUnit": "%",
+      "useAc": false,
+      "labelMap": { "volume": "Vol", "nr": "NR" },
+      "footerInfo": "Non-Alc Beer"
+    },
+    "value-creation_portfolio-performance_overview_category-growth-levers_premiumization": {
+      "title": "Lead Premium",
+      "mixTitle": "MIX",
+      "vsUnit": "%",
+      "useAc": false,
+      "labelMap": { "volume": "Vol", "nr": "NR" },
+      "footerInfo": null
+    },
+    "value-creation_portfolio-performance_overview_category-growth-levers_beyond-beer": {
+      "title": "Beyond Beer",
+      "mixTitle": "MIX",
+      "vsUnit": "%",
+      "useAc": false,
+      "labelMap": { "volume": "Vol", "nr": "NR" },
+      "footerInfo": null
+    }
+  };
+
+  $monthToNum := { "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6, "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12 };
+
+  $monthLabelToQuarter := function($label) {
+    $exists($label) and $length($label) >= 6
+      ? "Q" & $ceil(($lookup($monthToNum, $substring($label, 0, 3)) ?? 1) / 3) & "'" & $substring($label, -2)
+      : $label
+  };
+
+  $versusLabel := function($lyMonthLabel, $isBeer) {
+    $isBeer ? "vs " & $monthLabelToQuarter($lyMonthLabel) & " YTD" : "vs " & $lyMonthLabel & " YTD"
+  };
+
+  $dateRefreshLabel := function($refreshMonthLabel, $isBeer) {
+    $isBeer ? $monthLabelToQuarter($refreshMonthLabel) : $refreshMonthLabel
+  };
+
+  /* Same cell shape as growthLeversPerformanceFormatter / CMS KPI (string values, arrays enforced). */
+  $formatCell := function($raw) {
+    (
+      $exists($raw) and $type($raw) = "number"
+        ? $formatNumber($raw, "#0.0")
+        : ($exists($raw) ? $string($raw) : "")
+    )
+  };
+
+  $buildRow := function($row, $useAc, $labelMap, $vsUnit) {
+    (
+      $rawMix := $useAc ? $row.ac : $row.mix;
+      $label := $lookup($labelMap, $row.kpi_name);
+      {
+        "label": $exists($label) ? $label : $row.kpi_name,
+        "mix": {
+          "value": $formatCell($rawMix),
+          "unitOfMeasure": "%"
+        },
+        "vsLy": {
+          "value": $formatCell($row.value),
+          "unitOfMeasure": $vsUnit,
+          "direction": $row.comp_direction
+        }
+      }
+    )
+  };
+
+  $buildLever := function($key) {
+    (
+      $rows := $ensureArray($lookup($datasources, $key));
+      $cfg := $lookup($config, $key);
+      $count($rows) > 0 and $exists($cfg) ? (
+        $first := $rows[0];
+        $isBeer := $key = "value-creation_portfolio-performance_overview_category-growth-levers_beer-participation";
+        $header := [
+          { "id": "label", "title": "" },
+          { "id": "mix", "title": $cfg.mixTitle },
+          { "id": "vsLy", "title": "vs LY" }
+        ];
+        $kpiRows := $map($rows, function($r) {
+          $buildRow($r, $cfg.useAc, $cfg.labelMap, $cfg.vsUnit)
+        });
+        $out := {
+          "title": $cfg.title,
+          "versus": $versusLabel($first.lyMonthLabel, $isBeer),
+          "kpi_name": $first.kpi_name,
+          "dateRefresh": $dateRefreshLabel($first.refreshMonthLabel, $isBeer),
+          "kpi": {
+            "header": $ensureArray($header),
+            "rows": $ensureArray($kpiRows)
+          }
+        };
+        $exists($cfg.footerInfo) and $cfg.footerInfo != null
+          ? $merge([$out, { "footerInfo": $cfg.footerInfo }])
+          : $out
+      ) : null
+    )
+  };
+
+  $growthLevers := $ensureArray(
+    $filter(
+      $ensureArray($map($dsKeys, function($k) { $buildLever($k) })),
+      function($lever) { $type($lever) = "object" }
+    )
+  );
+
+  { "growthLevers": $growthLevers }
+)

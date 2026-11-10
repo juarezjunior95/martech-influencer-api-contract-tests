@@ -1,0 +1,1 @@
+export { BrandFlag } from './BrandFlag';

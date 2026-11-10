@@ -1,0 +1,128 @@
+(
+  $large := datasources.large ?? [];
+  $small := datasources.small ?? [];
+  $isEmpty := $count($large) = 0 and $count($small) = 0;
+
+  $config := {
+    "variation": {
+      "unit_measure_percent": "%"
+    }
+  };
+
+  /* -------------------------
+   * Helpers
+   * ------------------------- */
+  $formatValue := function($v) {
+    $type($v) = "number" ? $formatNumber($v,"#,##0.0") : "-"
+  };
+
+  $formatTwoDecimals := function($v) {
+    $type($v) = "number" ? $formatNumber($v,"0.00") : "0"
+  };
+
+  $trend := function($dir) {
+    $dir = "up" ? "positive" : "negative"
+  };
+
+  /* -------------------------
+   * Builder
+   * ------------------------- */
+  $build := function($data) {(
+    $hasValidData := $count($data) > 0 and $exists($data.ac[$type($) = "number" and $ != 0][0]);
+    $hasValidData = false
+    ? {}
+    :
+    (
+      $first := $data[0];
+      $last  := $data[$count($data)-1];
+      $wf    := $first.waterfall_filter ?? "";
+
+      $values := $data.($exists(ac) and $type(ac) = "number" ? ac : 0);
+      $formattedValues := $map($values,$formatValue);
+
+      $periodLabel := function($d, $i) {
+        $i = 0
+          ? ($wf != "brand" ? $first.period : [$first.period, ""])
+          : (
+              $i = $count($data)-1
+              ? ($wf != "brand" ? $last.period : [$last.period, ""])
+              : $d.label_value
+            )
+      };
+
+      $labels := $map($data, $periodLabel);
+
+      $comparison := $map($data, function($d){
+        (
+          $metrics := ["ac_vs_ly", "vol_vs_ly", "nr_vs_ly"];
+          
+          $merge($map($metrics, function($m) {
+            (
+              $val := $formatValue($lookup($d, $m));
+              $direction := $lookup($d, $m & "_direction");
+              $isEmpty := $val = "-";
+              {
+                ($m): {
+                  "value": $val,
+                  "measure": $isEmpty ? "" : ($d.comp_unit_of_measure ?? $config.variation.unit_measure_percent),
+                  "trend": $isEmpty ? "" : $trend($direction)
+                }
+              }
+            )
+          }))
+        )
+      });
+
+      $comparisonLine := [
+        { "title": "vs LY", "data": $comparison.ac_vs_ly },
+        { "title": "Vol vs LY", "data": $comparison.vol_vs_ly },
+        { "title": "NR/hL vs LY", "data": $comparison.nr_vs_ly }
+      ];
+
+      $comparisonLineWithArrays := $map($comparisonLine, function($item) {
+        { "title": $item.title, "data": $type($item.data) = "array" ? $item.data : [$item.data] }
+      });
+
+      {
+        "values": $type($values) = "array" ? $values : [$values],
+        "labels": $type($labels) = "array" ? $labels : [$labels],
+        "formattedData": [
+          [$formattedValues]
+        ],
+        "comparisonLine": {
+          "data": $comparisonLineWithArrays
+        },
+        "images": {
+          "data": [
+            $map($data, function($d, $i) {
+              (
+                $isBrand := $d.waterfall_filter = "brand";
+                {
+                 "title": $isBrand ? ($periodLabel($d, $i)[0] ? $periodLabel($d, $i)[0] : "") : $periodLabel($d, $i),
+                  "mainBrand": {
+                    "src": $d.image_value,
+                    "alt": $d.label_value
+                  },
+                  "badgeFlag": $d.badgeFlag
+                }
+              )
+            })
+          ]
+        }
+      }
+    )
+  )};
+
+  $isEmpty
+  ? { "empty": true }
+  : (
+      $largeResult := $build($large);
+      $smallResult := $build($small);
+      $hasLargeData := $count($keys($largeResult)) > 0;
+      $hasSmallData := $count($keys($smallResult)) > 0;
+      $hasLargeData or $hasSmallData ? {
+        "large": $largeResult,
+        "small": $smallResult
+      } : { "empty": true }
+    )
+)

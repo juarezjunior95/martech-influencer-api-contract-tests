@@ -1,0 +1,104 @@
+/**
+ * 🔢 TREND OVER TIME FORMATTER
+ * 🎯 Component: SimpleBarChart
+ * 📍 Used on: BrandPowerBook > Overview > Trend Over Time
+ * 🔄 Input: by-trend-over-time-power-mix + by-trend-over-time (linhas com ac, dt_ini, dt_end, ac_vs_ly)
+ * 📤 Output: SimpleBarChartData (min, max, values, labels, variationCaptions, connector)
+ */
+(
+  $dsKeys := $keys(datasources);
+  $powerMixRows := $lookup(datasources, $dsKeys[0]);
+  $trendRows := $lookup(datasources, $dsKeys[1]);
+
+  $config := {
+    "barColors": { "default": "#EDDAB1", "latest": "#D1A33C" },
+    "connector": {
+      "backgroundColor": { "up": "#E6F9E6", "down": "#FFE6E6" },
+      "textColor": { "up": "#007800", "down": "#BA0B0B" },
+      "measure": "pp"
+    },
+    "mixCaption": { "title": " ", "unit_of_measure": "%", "valueColor": "#1414148F" }
+  };
+
+  $quarterLabelFromRow := function($row) {
+    (
+      $month := $number($fromMillis($toMillis($row.dt_end), "[M01]"));
+      $yearFull := $fromMillis($toMillis($row.dt_end), "[Y0001]");
+      $quarter := $month <= 3 ? 1 : $month <= 6 ? 2 : $month <= 9 ? 3 : 4;
+      $yy := $substring($string($yearFull), 2, 2);
+      "Q" & $quarter & "'" & $yy
+    )
+  };
+
+  $mixValue := function($row) {
+    $exists($row.value) and $row.value != null ? $row.value : $row.ac
+  };
+
+  /* comparador booleano: ascendente por dt_ini */
+  $sortedTrend := $sort($trendRows, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+  $sortedMix := $sort($powerMixRows, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+
+  $lastIndex := $count($sortedTrend) - 1;
+  $distinctAcAsc := $sort($distinct($sortedTrend.ac), function($a, $b) { $a > $b });
+
+  $count($sortedTrend) = 0
+    ? { "empty": true }
+    : $merge([
+      {
+        "min": $distinctAcAsc[0] > 0 ? $distinctAcAsc[0] : $distinctAcAsc[1],
+        "max": $max($distinctAcAsc),
+        "values": $map($sortedTrend, function($row) { $row.ac }),
+        "labels": $map($sortedTrend, function($row) { $quarterLabelFromRow($row) }),
+        "backgroundColor": $map(
+          $sortedTrend,
+          function($row, $index) {
+            $index = $lastIndex ? $config.barColors.latest : $config.barColors.default
+          }
+        ),
+        "variationCaptions": $count($sortedMix) = 0
+          ? []
+          : [
+              {
+                "title": $config.mixCaption.title,
+                "data": $map(
+                  $sortedMix,
+                  function($mixRow) {
+                    {
+                      "value": $mixValue($mixRow),
+                      "unit_of_measure": $config.mixCaption.unit_of_measure,
+                      "color": $config.mixCaption.valueColor
+                    }
+                  }
+                )
+              }
+            ],
+        "legend": [
+          { "label": "Previous Year", "color": $config.barColors.default },
+          { "label": "Current Year", "color": $config.barColors.latest }
+        ],
+        "legendPeriod": "Quarterly"
+      },
+      $count($sortedTrend) >= 5 and $exists($sortedTrend[$lastIndex])
+        ? {
+          "connector": {
+            "from": $quarterLabelFromRow($sortedTrend[$lastIndex - 4]),
+            "to": $quarterLabelFromRow($sortedTrend[$lastIndex]),
+            "value": $sortedTrend[$lastIndex].ac_vs_ly,
+            "backgroundColor": $lookup(
+              $config.connector.backgroundColor,
+              $sortedTrend[$lastIndex].variationDirectionVsLy
+            ),
+            "textColor": $lookup(
+              $config.connector.textColor,
+              $sortedTrend[$lastIndex].variationDirectionVsLy
+            ),
+            "measure": $config.connector.measure
+          }
+        }
+        : {}
+    ])
+)

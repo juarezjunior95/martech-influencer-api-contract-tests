@@ -1,0 +1,1 @@
+export const DATA_NOT_AVAILABLE = 'DATA NOT AVAILABLE';

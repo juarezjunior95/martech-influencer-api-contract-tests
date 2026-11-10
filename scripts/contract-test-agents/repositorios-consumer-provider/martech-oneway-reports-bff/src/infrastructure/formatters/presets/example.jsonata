@@ -1,0 +1,34 @@
+/**
+ * 🔢 EXAMPLE PRESET FORMATTER
+ * 🎯 Component: GenericList (PoC demo)
+ * 📍 Used on: Presets > Example (RFC-003 PoC closing demo)
+ * 🔄 Input: examples (data-service `example` preset)
+ * 📤 Output: Array<{ name: string, version: string, health: string }>
+ * 🔧 Config: $config.healthRank (priority weight per health value)
+ */
+(
+  /* The data-service emits a static `{ examples: [...] }` payload. The
+     formatter is just for demonstration: it sorts entries so that the
+     `health` value with the lowest weight (good = 0) shows up first. */
+
+  $config := {
+    "healthRank": {
+      "good": 0,
+      "bad": 1
+    },
+    "fallbackRank": 99
+  };
+
+  $rankByHealth := function($example) {
+    (
+      $weight := $lookup($config.healthRank, $example.health);
+      $exists($weight) ? $weight : $config.fallbackRank
+    )
+  };
+
+  $count($.examples) = 0
+    ? { "empty": true }
+    : $sort($.examples, function($first, $second) {
+        $rankByHealth($first) > $rankByHealth($second)
+      })
+)

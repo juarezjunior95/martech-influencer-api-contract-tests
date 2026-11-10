@@ -1,0 +1,119 @@
+/* *
+ * 🔢 BigNumber cards
+ * 🎯 Component: BigNumber
+ * 📍 Used on: Volume Pages
+ * 🔄 Input: datasource
+ * 📤 Output: BigNumber card interface */
+(
+  $ds := $keys($.datasources)[0];
+  $data := $.datasources.$lookup($ds);
+  $isNrKpiView := $count($data[nr = "nr"]) > 0;
+  $unitMeasure := $isNrKpiView ? "[$Mio]" : "[k hl]";
+  $monthOrder := { "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6, "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12 };
+  $cardConfigs := [
+    {
+      "title": "Month",
+      "period": "MTD",
+      "comparative_unit": "%",
+      "unit_of_measure": $unitMeasure,
+      "comparison_label_prefix": "vs ",
+      "comparison_label_value_column": "end_month_label"
+    },
+    {
+      "title": "L3M",
+      "period": "L3M",
+      "comparative_unit": "%",
+      "unit_of_measure": $unitMeasure,
+      "comparison_label_prefix": "vs ",
+      "comparison_label_value_column": "period_label"
+    },
+    {
+      "title": "YTD",
+      "period": "YTD",
+      "comparative_unit": "%",
+      "unit_of_measure": $unitMeasure,
+      "comparison_label_prefix": "vs ",
+      "comparison_label_value_column": "end_month_label"
+    }
+  ];
+  $direction := {
+    "up": "#007800",
+    "down": "#B91C1C"
+  };
+  $getPeriodData := function($dateStr) {
+    ($exists($dateStr) and $dateStr != ""
+      ? (
+        $dateSubstr := $substring($dateStr, 0, 10);
+        $date := $toMillis($dateSubstr, "[Y0001]-[M01]-[D01]");
+        $monthName := $fromMillis($date, "[MNn,*-3]");
+        $year := $number($fromMillis($date, "[Y01]"));
+        {
+          "month": $monthName,
+          "year": $year,
+          "month_label": $monthName & "'" & $year
+        }
+      )
+      : undefined)
+  };
+  $formatSecondaryValue := function($value) {
+    $exists($value) and $type($value) = "number"
+      ? $formatNumber($value, "#,##0.0")
+      : "-"
+  };
+  $map(
+    $cardConfigs,
+    function($cardConfig) {
+      ($data[period = $cardConfig.period] != null
+        ? (
+          $cardData := $data[period = $cardConfig.period];
+          $iniDateData := $getPeriodData($cardData.dt_ini);
+          $endDateData := $getPeriodData($cardData.dt_end);
+
+          $l3mLabel :=
+          $lookup($monthOrder, $iniDateData.month) > $lookup($monthOrder, $endDateData.month)
+            ? ($iniDateData.month_label & "-" & $endDateData.month_label)
+            : ($iniDateData.month_label & "-" & $endDateData.month_label);
+          $periodLabel := $cardConfig.period = "MTD"
+            ? $endDateData.month_label
+            : $cardConfig.period = "L3M"
+              ? $l3mLabel
+              : $cardConfig.period = "YTD"
+                ? ("Jan'" & $endDateData.year & "-" & $endDateData.month_label)
+                : $lookup($cardData, $cardConfig.comparison_label_value_column);
+          $header := { "title": $cardConfig.title, "period": $periodLabel };
+          $hasBu := $exists($cardData.ac_vs_bu) and $type($cardData.ac_vs_bu) = "number";
+          $vsLy := [
+            {
+              "bigNumber": {
+                "value": $ensureArray($formatNumber($cardData.ac_vs_ly, "#,##0.0")),
+                "measure": $cardConfig.comparative_unit,
+                "color": $lookup($direction, $cardData.variationDirectionVsLy)
+              },
+              "comparison": { "label": "vs", "value": "LY" }
+            }
+          ];
+          $vsBu := [
+            {
+              "bigNumber": {
+                "value": [$hasBu ? $ensureArray($formatNumber($cardData.ac_vs_bu, "#,##0.0")) : "-"],
+                "measure": $hasBu ? $cardConfig.comparative_unit : undefined,
+                "color": $hasBu ? $lookup($direction, $cardData.variationDirectionVsBu) : undefined
+              },
+              "comparison": { "label": "vs", "value": "BU" }
+            }
+          ];
+          {
+            "header": $header,
+            "data": $append($vsLy, $vsBu),
+            "bottomInfo": {
+              "secondaryInfo": { "value": $formatSecondaryValue($cardData.ac), "label": $cardConfig.unit_of_measure }
+            }
+          }
+        )
+        : {
+          "header": { "title": $cardConfig.title, "period": "" },
+          "data": []
+        })
+    }
+  )
+)

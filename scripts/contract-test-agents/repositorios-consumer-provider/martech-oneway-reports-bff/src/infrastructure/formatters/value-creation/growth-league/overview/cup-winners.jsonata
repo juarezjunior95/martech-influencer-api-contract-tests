@@ -1,0 +1,60 @@
+/* *
+ * 🏆 GROWTH LEAGUE OVERVIEW CUP WINNERS FORMATTER
+ * 🎯 Component: Cup Winners
+ * 📍 Used on: Growth League > Overview > Cup Winners
+ * 🔄 Input: value-creation_growth-league_overview_cup-winners data
+ * 📤 Output: Formatted cup winners data grouped by cup+division with flags */
+(
+  $data := $.datasources."value-creation_growth-league_overview_cup-winners";
+
+  $translating := [
+    {"cup_name": "bees_cup", "division": "maturity_index", "suffix": "_maturity"},
+    {"cup_name": "bees_cup", "division": "health_index", "suffix": "_index"},
+    {"cup_name": "bees_cup", "division": "acceleration_index", "suffix": "_acceleration"},
+    {"cup_name": "dtc_cup", "division": "tier_1", "suffix": "_tier1"},
+    {"cup_name": "dtc_cup", "division": "tier_2", "suffix": "_tier2"},
+    {"cup_name": "ka_cup", "division": "league_a", "suffix": "_league_a"},
+    {"cup_name": "ka_cup", "division": "league_b", "suffix": "_league_b"},
+    {"cup_name": "mega_brands_cup", "division": "country", "suffix": "_country"}
+  ];
+
+  $getKey := function($item) {(
+    $match := $filter($translating, function($t) {
+      $t.cup_name = $item.cup_name and $t.division = $item.division
+    })[0];
+    $exists($match) ? $item.cup_name & $match.suffix : $item.cup_name
+  )};
+
+  $isBrand := function($item) {
+    $item.cup_name = "mega_brands_cup" and $item.division != "country"
+  };
+
+  $keys := $distinct($map($data, function($item) { $getKey($item) }));
+
+  $entries := $map($keys, function($key) {(
+    $items := $append([], $filter($data, function($item) { $getKey($item) = $key }));
+    {
+      $key: {
+        "label": $items[0].cup_name,
+        "rank": $map($items, function($item) {(
+          $isBrand($item)
+            ? {
+                "countryName": $item.raw_geography,
+                "position": $string($item.ranking),
+                "brand": $item.division,
+                "flag": $item.country.imageWaving
+              }
+            : {
+                "countryName": $item.raw_geography,
+                "position": $string($item.ranking),
+                "flag": $item.country.imageWaving
+              }
+        )})
+      }
+    }
+  )});
+
+  {
+    "cupWinners": $merge($entries)
+  }
+)

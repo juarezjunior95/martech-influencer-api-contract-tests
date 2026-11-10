@@ -1,0 +1,156 @@
+/* *
+ * 🔢 Table
+ * 🎯 Component: Table
+ * 📍 Used on: Volume Pages
+ * 🔄 Input: datasource
+ * 📤 Output: Table card interface */
+(
+  $ds := $keys($.datasources)[0];
+  $config := {
+    "direction": {
+      "up": "#007800",
+      "down": "#B91C1C"
+    },
+    "comparative_unit": "%",
+    "subtitles": {
+      "Superior Core - Portfolio": {
+        "Total": "(Superior Core)",
+        "Total (Beer + Adj)": "Superior Core"
+      },
+      "Beyond Beer": {
+        "Total": "Exp. Brands"
+      }
+    },
+    "headers": [
+      {
+        "id": "portfolio",
+        "title": "Portfolio",
+        "subtitle": "vs LY"
+      },
+      {
+        "id": "mtd",
+        "title": "Month"
+      },
+      {
+        "id": "l3m",
+        "title": "L3M"
+      },
+      {
+        "id": "ytd",
+        "title": "YTD"
+      }
+    ],
+    "global_brands_headers": [
+        {
+          "id": "brands",
+          "title": "Global Brands",
+          "subtitle": "vs LY"
+        },
+        {
+          "id": "mtd",
+          "title": "Month"
+        },
+        {
+          "id": "l3m",
+          "title": "L3M"
+        },
+        {
+          "id": "ytd",
+          "title": "YTD"
+        }
+      ],
+    "beyond_beer_headers": [
+        {
+          "id": "priorities",
+          "title": "Expansion Brands",
+          "subtitle": "vs LY"
+        },
+        {
+          "id": "mtd",
+          "title": "Month"
+        },
+        {
+          "id": "l3m",
+          "title": "L3M"
+        },
+        {
+          "id": "ytd",
+          "title": "YTD"
+        }
+      ],
+    "priorities_headers": [
+        {
+          "id": "priorities",
+          "title": "Priorities",
+          "subtitle": "vs LY"
+        },
+        {
+          "id": "mtd",
+          "title": "Month"
+        },
+        {
+          "id": "l3m",
+          "title": "L3M"
+        },
+        {
+          "id": "ytd",
+          "title": "YTD"
+        }
+      ]
+  };
+
+  
+  $data := $.datasources.$lookup($ds);
+  $subtitlesForFilter := $lookup($config.subtitles, $data[0].page_type);
+  $isBeyondBeer := $data[0].page_type = "Beyond Beer";
+  $isGlobalBrands := $contains($data[0].page_type, "Global Brands");
+  $isPriorities := $data[0].page_type in ["Lead Premium", "Non Alc Beer", "Balanced Choices", "Superior Core"];
+  $headers := $isBeyondBeer ? $config.beyond_beer_headers 
+              : $isGlobalBrands ? $config.global_brands_headers
+              : $isPriorities ? $config.priorities_headers
+              : $config.headers;
+  $imageKey := $isBeyondBeer ? "imageTable" : "imageSquare";
+
+  $beyondBeerRowKeys := $distinct($data.priorities);
+  $allRowKeys := $distinct($data[priorities != "Total"].priorities);
+  $rowKeys := $isBeyondBeer ? $beyondBeerRowKeys : $allRowKeys;
+    $toCellData := function($data) { 
+        $count($data) = 0 or $data.ac_vs_ly = "-" ? 
+        {"value": "-"} :
+        {
+            "value": $data.ac_vs_ly,
+            "unitMeasure": $config.comparative_unit,
+            "variationDirection": $lookup($config.direction, $data.variationDirectionVsLy)
+        }
+   };
+   
+  $rows := $map(
+      $rowKeys,
+      function($rowKey) {
+          (
+            $rowKeyData := $data[priorities=$rowKey];
+
+            $ytdData := $rowKeyData[period="YTD"];
+            $l3mData := $rowKeyData[period="L3M"];
+            $mData := $rowKeyData[period="M"];
+            $img := $lookup($rowKeyData[0].brand, $imageKey);
+            {
+                $headers[0].id: {
+                    "value": $rowKey,
+                    "subtitle": $lookup($subtitlesForFilter, $rowKey),
+                    "image": $img,
+                    "isBeyondBeer": $isBeyondBeer
+                },
+                "ytd": $toCellData($ytdData),
+                "l3m": $toCellData($l3mData),
+                "mtd": $toCellData($mData)
+            }
+          )
+      }
+  );
+  /* Filter out null values */
+  $count($data) = 0 ? { "empty": true } : {
+    "rows": [[ $rows ]],
+    "header": $headers
+  }
+)

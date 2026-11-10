@@ -1,0 +1,115 @@
+/* *
+ * 🏆 GROWTH LEAGUE RANKINGS MEGABRANDS DASHBOARD BRAND FORMATTER
+ * 🎯 Component: Megabrands Dashboard Brand Rankings
+ * 📍 Used on: Growth League > Rankings > Megabrands Dashboard Brand
+ * 🔄 Input: value-creation_growth-league_rankings_megabrands-dashboard-brand data (long format: one row per brand per KPI)
+ * 📤 Output: Table format with resolved header subtitles and pivoted rows */
+(
+  $data := $.datasources."value-creation_growth-league_rankings_megabrands-dashboard-brand";
+
+  $getSubtitle := function($kpiVariation, $format) {(
+    $item := $filter($data, function($d) { $d.kpi_variation = $kpiVariation })[0];
+    $exists($item) ? (
+      $format = "formatQuarter"
+        ? $formatDateToQuarter($item.dt_end)
+        : $formatPeriod($item.dt_end)
+    ) : undefined
+  )};
+
+  $getCountryKey := function($row) {
+    $exists($row.country_iso_code_3)
+      ? $row.country_iso_code_3
+      : ($type($row.country) = "string" ? $row.country : "")
+  };
+
+  $mapKpiId := function($kpiVariation) {
+    $kpiVariation = "overall_result" ? "overall_results" : $kpiVariation
+  };
+
+  $kpiIds := ["overall_results", "volume", "brand_power", "net_revenue", "market_share", "cores", "participation"];
+  $defaultKpis := $reduce($kpiIds, function($acc, $kpi) {
+    $merge([$acc, { ($kpi): { "value": "-" } }])
+  }, {});
+
+  $header := [
+    {
+      "id": "leaderboard",
+      "title": "Leaderboard",
+      "children": [
+        {"id": "rank", "title": "Rank"},
+        {"id": "country", "title": "Country"},
+        {"id": "brand", "title": "Brand"}
+      ]
+    },
+    {
+      "id": "megabrands_dashboard",
+      "title": "Megabrands Dashboard",
+      "children": [
+        {"id": "overall_results", "title": "Total", "subtitle": $getSubtitle("overall_result", "formatDate")},
+        {"id": "volume", "title": "Volume", "subtitle": $getSubtitle("volume", "formatDate")},
+        {"id": "net_revenue", "title": "Net Revenue", "subtitle": $getSubtitle("net_revenue", "formatDate")},
+        {"id": "cores", "title": "CORES", "subtitle": $getSubtitle("cores", "formatDate")},
+        {"id": "market_share", "title": "Market Share", "subtitle": $getSubtitle("market_share", "formatDate")},
+        {"id": "brand_power", "title": "Brand Power", "subtitle": $getSubtitle("brand_power", "formatQuarter")},
+        {"id": "participation", "title": "Participation", "subtitle": $getSubtitle("participation", "formatDate")}
+      ]
+    }
+  ];
+
+  $uniqueEntries := $distinct($map($data, function($row) {
+    $getCountryKey($row) & "|" & ($exists($row.raw_brand) ? $row.raw_brand : "")
+  }));
+
+  $pivotedRows := $map($uniqueEntries, function($entry) {(
+    $parts := $split($entry, "|");
+    $countryName := $parts[0];
+    $brandName := $parts[1];
+    $entryRows := $append([], $filter($data, function($row) {
+      $getCountryKey($row) = $countryName and ($exists($row.raw_brand) ? $row.raw_brand : "") = $brandName
+    }));
+    $firstRow := $entryRows[0];
+    $flag := $exists($firstRow.country.imageIcon)
+      ? $firstRow.country.imageIcon
+      : ($exists($firstRow.country_images.imageIcon) ? $firstRow.country_images.imageIcon : $firstRow.country_image);
+    $brandImg := ($exists($firstRow.brand.imageTable) and $firstRow.brand.imageTable != "")
+      ? $firstRow.brand.imageTable
+      : ($exists($firstRow.brand.imageSquare) ? $firstRow.brand.imageSquare : "");
+
+    $kpiValues := $reduce($entryRows, function($acc, $row) {
+      (
+        $isKpiValid := $type($row.score) = "number";
+        $merge([$acc, {
+          ($mapKpiId($row.kpi_variation)): { 
+            "unitMeasure": $isKpiValid ? "%" : "", 
+            "value": $isKpiValid ? $row.score : "-"
+          }
+        }])
+      )
+    }, {});
+
+    $merge([
+      {
+        "rank": { "value": $string($firstRow.country_ranking) },
+        "country": { "value": $countryName, "img": $flag },
+        "brand": { "value": $brandName, "img": $brandImg }
+      },
+      $defaultKpis,
+      $kpiValues
+    ])
+  )});
+
+  $sortedRows := $sort($pivotedRows, function($a, $b) {
+    $number($a.rank.value) > $number($b.rank.value)
+  });
+
+  $splits := [
+    ["leaderboard"],
+    ["megabrands_dashboard"]
+  ];
+
+  {
+    "rows": [[$sortedRows]],
+    "header": $header,
+    "splits": $splits
+  }
+)

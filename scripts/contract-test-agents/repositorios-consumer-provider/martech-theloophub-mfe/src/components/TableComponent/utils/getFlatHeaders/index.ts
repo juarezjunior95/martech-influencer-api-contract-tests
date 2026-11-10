@@ -1,0 +1,1 @@
+export { getFlatHeaders } from './getFlatHeaders';

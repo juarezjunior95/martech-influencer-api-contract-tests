@@ -1,0 +1,110 @@
+/* *
+* 🔢 Market Share BigNumber cards
+* 🎯 Component: BigNumber
+* 📍 Used on: Value Creation > PR Pages > Market Share
+* 🔄 Input: value-creation_pr-pages_market-share_big-numbers
+* 📤 Output: BigNumber card interface
+*/
+(
+  $datasourceName := "value-creation_pr-pages_market-share_big-numbers";
+  $data := $lookup(datasources, $datasourceName);
+
+  $cardConfigs := [
+    {
+      "title": "Month",
+      "period": "MTD",
+      "secondary_unit_of_measure": "[%]"
+    },
+    {
+      "title": "L3M",
+      "period": "L3M",
+      "secondary_unit_of_measure": "[%]"
+    },
+    {
+      "title": "YTD",
+      "period": "YTD",
+      "secondary_unit_of_measure": "[%]"
+    }
+  ];
+
+  $directionColors := {
+    "up": "#007800",
+    "down": "#B91C1C"
+  };
+
+  $getPeriodData := function($dateStr) {
+    ($exists($dateStr) and $dateStr != ""
+      ? (
+        $dateSubstr := $substring($dateStr, 0, 10);
+        $dateMillis := $toMillis($dateSubstr, "[Y0001]-[M01]-[D01]");
+        $monthName := $fromMillis($dateMillis, "[MNn,*-3]");
+        $year := $fromMillis($dateMillis, "[Y01]");
+        {
+          "month": $monthName,
+          "year": $year,
+          "monthLabel": $monthName & "'" & $year
+        }
+      )
+      : undefined)
+  };
+
+  $buildPeriodLabel := function($cardData, $cardConfig) {
+    (
+      $iniDateData := $getPeriodData($cardData.dt_ini);
+      $endDateData := $getPeriodData($cardData.dt_end);
+      $cardConfig.period = "MTD"
+        ? $endDateData.monthLabel
+        : ($iniDateData.monthLabel & "-" & $endDateData.monthLabel)
+    )
+  };
+
+  $formatSecondaryValue := function($value) {
+    $exists($value) and $type($value) = "number"
+      ? $formatNumber($value, "#,##0.0")
+      : "-"
+  };
+
+  $buildComparisonBlock := function($cardData, $variationValue, $variationDirection, $comparisonLabel) {
+    (
+      $hasValue := $exists($variationValue) and $type($variationValue) = "number";
+      {
+        "bigNumber": {
+          "value": $ensureArray($hasValue ? $formatNumber($variationValue, "#,##0.0") : "-"),
+          "measure": $hasValue ? $cardData.comp_unit_of_measure : undefined,
+          "color": $hasValue ? $lookup($directionColors, $variationDirection) : undefined
+        },
+        "comparison": { "label": "vs", "value": $comparisonLabel }
+      }
+    )
+  };
+
+  $map($cardConfigs, function($cardConfig) {
+    (
+      $cardData := $data[period = $cardConfig.period];
+      $isSuperiorCore:= $cardData.growth_lever = "Superior Core";
+      $isLeadPremium:= $cardData.growth_lever = "Lead Premium";
+      $isAll:= $cardData.growth_lever = "All";
+      $exists($cardData) and $cardData != null
+        ? {
+            "header": {
+              "title": $cardConfig.title,
+              "period": $buildPeriodLabel($cardData, $cardConfig)
+            },
+            "data": [
+              $buildComparisonBlock($cardData, $cardData.ac_vs_ly, $cardData.variationDirectionVsLy, "LY")
+            ],
+            "bottomInfo": {
+              "secondaryInfo": {
+                "value": $formatSecondaryValue($cardData.ac),
+                "label": $cardConfig.secondary_unit_of_measure
+              }
+            }
+          }
+        : {
+            "header": { "title": $cardConfig.title, "period": "" },
+            "data": []
+          }
+    )
+  })
+)
+ 

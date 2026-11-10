@@ -1,0 +1,45 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const dataset_repository_factory_1 = require("../../../../../../factories/dataset-repository.factory");
+const kpi_entity_1 = require("../../../../../../entities/kpi.entity");
+const filters = [
+    {
+        name: "period",
+        required: true,
+    },
+    {
+        name: "viewtype",
+        required: true,
+    },
+    {
+        name: "country",
+        required: true,
+    },
+    {
+        name: "dt_ini",
+        required: true,
+    },
+    {
+        name: "dt_end",
+        required: true,
+    },
+    {
+        name: "zone",
+        required: true,
+    },
+];
+const config = {
+    datasets: [
+        {
+            id: "portfolio-performance-pl-brand-growth-contribution",
+            config: (0, dataset_repository_factory_1.createDeltalakeProcedureFetchDataConfig)({
+                functionName: "3_portfolio_brand_country-brand-and-portfolio-p&l_brands-growth",
+                parameters: filters.map((filter) => filter.name),
+            }),
+        },
+    ],
+    entityClass: kpi_entity_1.KpiEntity,
+    filters,
+};
+exports.default = config;
+//# sourceMappingURL=growth-contribution.datasource.js.map

@@ -1,0 +1,43 @@
+/* *
+ * 🏆 GROWTH LEAGUE OVERVIEW RANK FORMATTER
+ * 🎯 Component: Rank
+ * 📍 Used on: Growth League > Overview > Rank
+ * 🔄 Input: value-creation_growth-league_overview_rank data
+ * 📤 Output: Formatted rank data grouped by league with flags */
+(
+  $data := $.datasources."value-creation_growth-league_overview_rank";
+
+  $slugify := function($str) {(
+    $cleaned := $replace($str, /[^A-Za-z0-9 ]/, "");
+    $normalized := $replace($cleaned, /\s+/, " ");
+    $trimmed := $trim($normalized);
+    $result := $lowercase($replace($trimmed, " ", "-"));
+    $result != "" ? $result : "unknown"
+  )};
+
+  $leagues := $distinct($data.league);
+
+  $entries := $map($leagues, function($league) {(
+    $items := $append([], $filter($data, function($item) { $item.league = $league }));
+    $key := $slugify($league);
+    {
+      $key: {
+        "label": $league,
+        "rank": $map($items, function($item) {
+          {
+            "countryName": $item.country_iso_code_3,
+            "position": $string($item.ranking),
+            "value": $item.score,
+            "flag": $item.country.imageIcon,
+            "measure": "%",
+            "league": $item.league
+          }
+        })
+      }
+    }
+  )});
+
+  {
+    "ranking": $merge($entries)
+  }
+)

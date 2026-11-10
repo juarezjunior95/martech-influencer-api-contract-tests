@@ -1,0 +1,70 @@
+/* 🔢 Increase Participation Big Number Spark Line Formatter
+ * 🎯 Component: Increase Participation Big Number Spark Line
+ * 📍 Used on: Consumer Home
+ * 🔄 Input: consumer_home_increase-participation data
+ * 📤 Output: BigNumberSparkLineData */
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+
+  $dataArray := $type($data) = "array" ? $data : $exists($data) ? [$data] : [];
+
+  /* The last item is the big number, the first ones are the Spark Line data*/
+  $sparkLineItems := $filter($dataArray, function($v, $i) { $i < ($count($dataArray) - 1) });
+  $bigNumberItem := $dataArray[$count($dataArray) - 1];
+
+  /* Format period label: "Q3-25" -> "Q3'25" */
+  $formatPeriodLabel := function($label) {(
+    $replace($label, "-", "'")
+  )};
+
+  /* Build chartPeriod from last sparkline item + big number item period_label */
+  $lastSparkLineItem := $sparkLineItems[$count($sparkLineItems) - 1];
+  $chartPeriod := $formatPeriodLabel($lastSparkLineItem.period_label) & " - " & $bigNumberItem.period_label;
+
+  /* Format number with 1 decimal place */
+  $formatNumber := function($value) {(
+    $exists($value) and $type($value) = "number"
+      ? (
+          $r := $round($value, 1);
+          $r = $floor($r) ? $string($r) & ".0" : $string($r)
+        )
+      : "-"
+  )};
+
+  /* Determine trend: negative if value < 0, positive otherwise */
+  $getTrend := function($value) {(
+    $value < 0 ? "negative" : "positive"
+  )};
+
+  /* Build chartLineData from first 8 items' ac values */
+  $chartLineNumbers := $map($sparkLineItems, function($item) { $item.ac });
+  $chartLineData := $type($chartLineNumbers) = "array" ? $chartLineNumbers : [$chartLineNumbers];
+
+  /* Build bigNumberData from last item */
+  $bigNumberData := [
+    {
+      "bigNumber": {
+        "value": $formatNumber($bigNumberItem.ac_vs_ly),
+        "measure": $bigNumberItem.comp_unit_of_measure,
+        "trend": $getTrend($bigNumberItem.ac_vs_ly)
+      },
+      "comparison": {
+        "label": "vs",
+        "value": "LY"
+      },
+      "secondaryInfo": {
+        "label": "[ " & $bigNumberItem.unit_of_measure & " ]",
+        "value": $formatNumber($bigNumberItem.ac)
+      }
+    }
+  ];
+
+  /* Return final BigNumberSparkLineData structure */
+  {
+    "chartTitle": "P4W Participation",
+    "chartPeriod": $exists($lastSparkLineItem) ? $chartPeriod : "",
+    "bigNumberData": $exists($bigNumberItem) ? $bigNumberData : [],
+    "chartLineData": $chartLineData
+  }
+)

@@ -1,0 +1,72 @@
+/* 🔢 LEAD THE CATEGORY SPARKLINE FORMATTER
+ * 🎯 Component: ABI Market Share Sparkline Card
+ * 📍 Used on: Category Home
+ * 🔄 Input: category_home_lead-the-category datasource
+ * 📤 Output: BigNumberSparkLineData for the frontend */
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+
+  /* Helper functions */
+
+  /* Safely converts value to number, returns undefined for null */
+  $safeNumber := function($val) {
+    $exists($val) and $val != null ? $number($val) : undefined
+  };
+
+  /* Formats number with one decimal place and thousand separator */
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number"
+      ? $formatNumber($value, '#,##0.0')
+      : "-"
+  };
+
+  /* Formats the label with unit_of_measure in brackets */
+  $formatUnitLabel := function($unit) {
+    $exists($unit) and $unit != "" ? "[ " & $unit & " ]" : ""
+  };
+
+  /* Determines trend based on comparison value */
+  $determineTrend := function($compValue) {(
+    $num := $safeNumber($compValue);
+    $exists($num) ?
+      $num >= 0 ? "positive" : "negative"
+    : undefined
+  )};
+
+  $dataArray := $type($data) = "array" ? $data : $exists($data) ? [$data] : [];
+
+  $count($dataArray) = 0 ? [] : (
+
+    $lineChartRecords := $dataArray[display_type = "LINE_CHART"];
+    $bigNumberRecords := $dataArray[display_type = "BIG_NUMBER"];
+
+    $bigNumberRecord := $type($bigNumberRecords) = "array" ? $bigNumberRecords[0] : $bigNumberRecords;
+
+    $lineArray := $type($lineChartRecords) = "array" ? $lineChartRecords : $exists($lineChartRecords) ? [$lineChartRecords] : [];
+    $sortedLines := $sort($lineArray, function($a, $b) { $a.dt_end > $b.dt_end });
+
+    [{
+      "chartTitle": "ABI Market Share",
+      "chartPeriod": $bigNumberRecord.refreshMonthLabel & " " & $bigNumberRecord.vs_ly_label_suffix,
+      "bigNumberData": [
+        {
+          "bigNumber": {
+            "value": $formatValue($safeNumber($bigNumberRecord.comp_value)),
+            "measure": $bigNumberRecord.comp_unit_of_measure,
+            "trend": $determineTrend($bigNumberRecord.comp_value)
+          },
+          "comparison": {
+            "label": "vs",
+            "value": "LY"
+          },
+          "secondaryInfo": {
+            "label": $formatUnitLabel($bigNumberRecord.unit_of_measure),
+            "value": $formatValue($safeNumber($bigNumberRecord.value))
+          }
+        }
+      ],
+      "chartLineData": [$sortedLines.$number(value)]
+    }]
+  )
+)

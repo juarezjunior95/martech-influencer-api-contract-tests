@@ -1,0 +1,75 @@
+/**
+ * CONNECTIONS AND CREATIVITY BIG NUMBERS TREND FORMATTER
+ * Component: Connections and Creativity Home - Big Numbers Trend
+ * Used on: Connections and Creativity > Home
+ */
+(
+  $mediaSpendData := datasources."media-spend";
+  $nonWorkingMoneyData := datasources."non-working-money";
+
+  /* Format value - returns "-" for null/undefined values */
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number" ?
+      $formatNumber($value, '#,##0.0')
+      : "-"
+  };
+
+  /* Map direction to trend */
+  $mapTrend := function($direction) {
+    $direction = "up" ? "positive" : "negative"
+  };
+
+  /* Map direction to trend (inverted for Non-Working Money - down is positive) */
+  $mapTrendInverted := function($direction) {
+    $direction = "down" ? "positive" : "negative"
+  };
+
+  /* Get the latest record from each datasource */
+  $mediaSpendRecord := $mediaSpendData[0];
+  $nonWorkingMoneyRecord := $nonWorkingMoneyData[0];
+
+  [
+    {
+      "chartTitle": "Media Spend",
+      "chartPeriod": $mediaSpendRecord.refreshMonthLabel & " " & $mediaSpendRecord.vs_ly_label_suffix,
+      "bigNumberData": $count($mediaSpendRecord) < 1 ? [] : [
+        {
+          "bigNumber": {
+            "value": $formatValue($mediaSpendRecord.ac_vs_ly),
+            "measure": "%",
+            "trend": $mapTrend($mediaSpendRecord.variationDirectionVsLy)
+          },
+          "comparison": {
+            "label": "vs",
+            "value": "LY"
+          },
+          "secondaryInfo": {
+            "label": "[ # ]",
+            "value": $formatValue($mediaSpendRecord.ac)
+          }
+        }
+      ]
+    },
+    {
+      "chartTitle": "Non-Working Money",
+      "chartPeriod": $nonWorkingMoneyRecord.refreshMonthLabel & " " & $nonWorkingMoneyRecord.vs_ly_label_suffix,
+      "bigNumberData": $count($nonWorkingMoneyRecord) < 1 ? [] : [
+        {
+          "bigNumber": {
+            "value": $formatValue($nonWorkingMoneyRecord.ac_vs_ly),
+            "measure": "%",
+            "trend": $mapTrendInverted($nonWorkingMoneyRecord.variationDirectionVsLy)
+          },
+          "comparison": {
+            "label": "vs",
+            "value": "LY"
+          },
+          "secondaryInfo": {
+            "label": "[ # ]",
+            "value": $formatValue($nonWorkingMoneyRecord.ac)
+          }
+        }
+      ]
+    }
+  ]
+)

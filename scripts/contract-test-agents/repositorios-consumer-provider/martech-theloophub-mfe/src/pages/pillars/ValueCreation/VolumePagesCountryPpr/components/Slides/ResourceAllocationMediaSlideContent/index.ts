@@ -1,0 +1,1 @@
+export { ResourceAllocationMediaSlideContent } from './ResourceAllocationMediaSlideContent';

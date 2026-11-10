@@ -1,0 +1,82 @@
+/**
+ * 🔢 TREND OVER TIME EXPORT FORMATTER
+ * 🎯 Component: SimpleBarChart
+ * 📍 Used on: BrandPowerBook Export > Trend Over Time chart
+ * 🔄 Input: by-trend-over-time (quarterly power data)
+ * 📤 Output: SimpleBarChartData interface
+ * 🔧 Config: connector colors, legend colors/labels, legendPeriod, drThresholdYear
+ */
+(
+  $trendKey := "portfolio-brand_brand-power-book_overview_power-performance-trend_by-trend-over-time";
+
+  $config := {
+    "connector": {
+      "background_color": { "up": "#E6F9E6", "down": "#FFE6E6" },
+      "text_color": { "up": "#007800", "down": "#BA0B0B" },
+      "measure": "pp"
+    },
+    "legend": [
+      { "label": "DR not in the survey", "color": "#D3E3EE" },
+      { "label": "Prev. Quarters", "color": "#EDDAB1" },
+      { "label": "AC. Quarter", "color": "#D1A33C" }
+    ],
+    "legendPeriod": "Quarterly",
+    "drThresholdYear": 21
+  };
+
+  $isValidNumber := function($value) { $type($value) = "number" };
+
+  $safeArray := function($maybe) {
+    $exists($maybe) and $type($maybe) = "array" ? $maybe : []
+  };
+
+  $twoDigitYearFromDate := function($isoDate) {
+    $number($fromMillis($toMillis($isoDate), '[Y01]'))
+  };
+
+  $trendRaw := $safeArray($lookup(datasources, $trendKey));
+  $trendSorted := $sort($trendRaw, function($left, $right) {
+    $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+  });
+
+  $count($trendSorted) = 0
+    ? { "empty": true }
+    : (
+      $countTrend := $count($trendSorted);
+      $acValues := $append([], $map($trendSorted, function($row) { $row.ac }));
+      $sortedDistinctAc := $sort($distinct($acValues), function($left, $right) { $left > $right });
+      $minValue := $sortedDistinctAc[0] > 0 ? $sortedDistinctAc[0] : $sortedDistinctAc[1];
+      $lastTrend := $trendSorted[$countTrend - 1];
+      $fromTrend := $trendSorted[$countTrend - 5];
+      $direction := $exists($lastTrend.variationDirectionVsLy) ? $lastTrend.variationDirectionVsLy : "up";
+
+      {
+        "min": $minValue,
+        "max": $max($acValues),
+        "values": $acValues,
+        "labels": $append([], $map($trendSorted, function($row) {
+          $formatDateToQuarter($row.dt_ini)
+        })),
+        "backgroundColor": $append([], $map($trendSorted, function($row, $index) {
+          $twoDigitYearFromDate($row.dt_ini) <= $config.drThresholdYear
+            ? $config.legend[0].color
+            : $index = $countTrend - 1
+              ? $config.legend[2].color
+              : $config.legend[1].color
+        })),
+        "variationCaptions": [],
+        "connector": $countTrend >= 5 and $isValidNumber($lastTrend.ac_vs_ly)
+          ? {
+              "from": $formatDateToQuarter($fromTrend.dt_ini),
+              "to": $formatDateToQuarter($lastTrend.dt_ini),
+              "value": $lastTrend.ac_vs_ly,
+              "backgroundColor": $lookup($config.connector.background_color, $direction),
+              "textColor": $lookup($config.connector.text_color, $direction),
+              "measure": $config.connector.measure
+            }
+          : null,
+        "legend": $config.legend,
+        "legendPeriod": $config.legendPeriod
+      }
+    )
+)

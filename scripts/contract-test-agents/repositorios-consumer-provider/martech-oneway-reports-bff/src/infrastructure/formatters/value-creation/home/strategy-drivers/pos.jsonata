@@ -1,0 +1,92 @@
+/**
+ * 🔢 VALUE HOME STRATEGY DRIVERS FORMATTER
+ * 🎯 Component: Strategy Driver Cards (ABI Lovers, Occasions, Participation)
+ * 📍 Used on: Value Home > Strategy Drivers
+ * 🔄 Input: value-creation_home_strategy-drivers_pos (datasources only)
+ * 📤 Output: Array of 3 cards (always); chartHeader + bigNumberData; noticeMessage when no KPI row
+ */
+
+(
+  /* ─── Datasource (hyphenated key) ─── */
+  $data := $lookup(datasources, "value-creation_home_strategy-drivers_pos") ?? [];
+
+  /* ─── Fixed card config ─── */
+  $config := {
+    "cards": [
+      { "kpi": "p7d", "title": "ABI Lovers", "comp_unit_key": "comp_unit_of_measure" },
+      { "kpi": "occasions", "title": "Occasions" },
+      { "kpi": "p4w", "title": "LDA-24 Participation", "comp_unit_key": "comp_unit_of_measure" }
+    ],
+    "comparison": { "label": "vs", "value": "LY" },
+    "empty_message": "Data not available",
+    "direction": { "up": "positive", "down": "negative" }
+  };
+
+  /* ─── Helpers ─── */
+  $isValidNumber := function($val) { $type($val) = "number" };
+  $formatValue := function($value) {
+    $exists($value) and $isValidNumber($value) ? $formatNumber($value, "#,##0.0") : "-"
+  };
+  /* Period from dt_ini/dt_end: "Q1-Q4'25" */
+  $formatPeriodQuarters := function($dtIni, $dtEnd, $period) {
+    (
+      $exists($dtIni) and $dtIni != "" and $exists($dtEnd) and $dtEnd != ""
+        ? (
+          $monthIni := $number($fromMillis($toMillis($dtIni), "[M01]"));
+          $monthEnd := $number($fromMillis($toMillis($dtEnd), "[M01]"));
+          $qIni := $ceil($monthIni / 3);
+          $qEnd := $ceil($monthEnd / 3);
+          $yearTwo := $fromMillis($toMillis($dtEnd), "[Y01]");
+          ($period = "MTD" or $period = "L3M")
+            ? ("Q" & $qEnd & "'" & $yearTwo)
+            : ("Q" & $qIni & "-Q" & $qEnd & "'" & $yearTwo)
+        )
+        : ""
+    )
+  };
+
+  $refRowForPeriod := $data[
+    $exists(dt_ini) and dt_ini != "" and $exists(dt_end) and dt_end != ""
+  ][0];
+  $periodFallback := $exists($refRowForPeriod)
+    ? $formatPeriodQuarters($refRowForPeriod.dt_ini, $refRowForPeriod.dt_end, $refRowForPeriod.period)
+    : "";
+  /* Get single row for a card by kpi_name (case-insensitive) */
+  $getRowForKpi := function($kpiKey) {
+    $data[$lowercase(kpi_name) = $lowercase($kpiKey)][0]
+  };
+
+  $map($config.cards, function($card) {
+    (
+      $row := $getRowForKpi($card.kpi);
+      $title := $card.title;
+      $hasData := $exists($row);
+
+      $hasData
+        ? {
+            "chartHeader": {
+              "title": $title,
+              "period": $formatPeriodQuarters($row.dt_ini, $row.dt_end, $row.period)
+            },
+            "bigNumberData": [
+              {
+                "bigNumber": {
+                  "value": $formatValue($row.ac_vs_ly),
+                  "measure": $exists($card.comp_unit_key) ? $lookup($row, $card.comp_unit_key) : "%",
+                  "trend": $lookup($config.direction, $row.variationDirectionVsLy)
+                },
+                "comparison":  $config.comparison
+              }
+            ]
+          }
+        : {
+            "chartHeader": {
+              "title": $title,
+              "period": ""
+            },
+            "noticeMessage": $config.empty_message,
+            "bigNumberData": []
+          }
+    )
+  })
+) 

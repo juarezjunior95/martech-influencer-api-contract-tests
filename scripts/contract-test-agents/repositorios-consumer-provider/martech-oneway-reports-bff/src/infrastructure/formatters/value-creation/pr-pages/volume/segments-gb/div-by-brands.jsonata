@@ -1,0 +1,202 @@
+/* *
+ * 🔢 Bar charts (v2)
+ * 🎯 Component: Bar
+ * 📍 Used on: Volume Pages
+ * 🔄 Input: datasource (new schema: brand/country as objects, no brand_country)
+ * 📤 Output: Bar chart interface */
+(
+  $ds := $keys($.datasources)[0];
+  $config := {
+    "period": "MTD",
+    "legend": [
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "color": "#49764B",
+        "icon": "TrendingUp"
+      },
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "color": "#A20A0A",
+        "icon": "TrendingDown"
+      }
+    ],
+    "direction": {
+      "up": "#007800",
+      "down": "#B91C1C"
+    },
+    "bar_direction": {
+      "up": "#49764B",
+      "down": "#A20A0A"
+    },
+    "gray_color": "#5C5C5C",
+    "comparisons": [
+      {
+        "title": "vs LY",
+        "kpi_name": "volume",
+        "attribute": "ac_vs_ly",
+        "color_type": "direction",
+        "direction_field": "variationDirectionVsLy",
+        "unitMeasure": "%"
+      },
+      {
+        "title": "Vol. Weight",
+        "kpi_name": "volume_weight",
+        "attribute": "ac",
+        "color_type": "static",
+        "unitMeasure": "%"
+      }
+    ]
+  };
+
+  $rawData := $.datasources.$lookup($ds);
+  $empty := $count($rawData) = 0;
+
+  /* Enrich data with computed brand_country key */
+  $data := $map($rawData, function($item) {
+    $merge([$item, {
+      "brand_country": $item.raw_brand & " " & $item.country_iso_code_3
+    }])
+  });
+
+  $brandCountryPairs := $distinct($data[kpi_name = "volume"].brand_country);
+  $isValidNumber := function($val) { $type($val) = "number" };
+
+  $formatAbreviatedNumber := function($n) {
+    (
+      $abs := $abs($n);
+      $suffix := $abs >= 1000000
+        ? "M"
+        : $abs >= 1000
+          ? "k"
+          : "";
+      $divisor := $abs >= 1000000
+        ? 1000000
+        : $abs >= 1000
+          ? 1000
+          : 1;
+      $val := $n / $divisor;
+      $s := $string($round($val, 1));
+      $formatted := ($val > -1 and $val < 1 and $val != 0 and $substring($s, 0, 1) = ".") ? "0" & $s : $s;
+      $formatted & $suffix
+    )
+  };
+
+  $normalizeText := function($value) {
+    $type($value) = "string" ? $lowercase($value) : ""
+  };
+  $othersAggregateValues := ["others", "other", "global"];
+  $isOthersAggregateValue := function($value) {
+    $count($othersAggregateValues[$ = $value]) > 0
+  };
+
+  $datasetData := $map(
+    $brandCountryPairs,
+    function($pair) {
+      (
+        $entry := $data[brand_country = $pair and kpi_name = "volume"][0];
+        $isValidNumber($entry.delta) ? $entry.delta : 0
+      )
+    }
+  );
+
+  $datasetColors := $map(
+    $brandCountryPairs,
+    function($pair) {
+      $lookup(
+        $config.bar_direction,
+        $data[brand_country = $pair and kpi_name = "volume"].variationDirectionDelta
+      )
+    }
+  );
+
+  $formattedData := $map(
+    $datasetData,
+    function($datapoint) {
+      $formatAbreviatedNumber($datapoint)
+    }
+  );
+
+  $comparisonLines := $map(
+    $config.comparisons,
+    function($comparison) {
+      {
+        "title": $comparison.title,
+        "data": $map(
+          $brandCountryPairs,
+          function($pair) {
+            (
+              $brandData := $data[brand_country = $pair and kpi_name = $comparison.kpi_name][0];
+              $value := $lookup($brandData, $comparison.attribute);
+              $not($exists($brandData)) or $value = "-" or $not($exists($value))
+                ? { "value": "-" }
+                : {
+                  "value": $isValidNumber($value) ? $formatNumber($value, "#,##0.0") : $value,
+                  "measure": $comparison.unitMeasure,
+                  "color": $comparison.color_type = "direction"
+                    ? $lookup($config.direction, $lookup($brandData, $comparison.direction_field))
+                    : $config.gray_color
+                }
+            )
+          }
+        )
+      }
+    }
+  );
+
+  $avatars := $map(
+    $brandCountryPairs,
+    function($pair) {
+      (
+        $labelData := $data[brand_country = $pair][0];
+        $rawBrandNormalized := $normalizeText($labelData.raw_brand);
+        $segmentNormalized := $normalizeText($labelData.segment);
+        $countryNormalized := $normalizeText($labelData.country_iso_code_3);
+        $isOthersSpecific := $contains($lowercase($trim($labelData.raw_brand)), "others");
+        $isOthersAggregate := $isOthersAggregateValue($rawBrandNormalized)
+          or $isOthersAggregateValue($segmentNormalized)
+          or $isOthersAggregateValue($countryNormalized)
+          or $isOthersSpecific;
+        $isOthersAggregate
+          ? {
+            "title": $labelData.raw_brand,
+            "mainBrand": {
+              "src": $labelData.brand.imageSquare,
+              "alt": $labelData.raw_brand & " FLAG"
+            },
+            "description": $labelData.raw_brand
+          }
+          : {
+            "title": $labelData.raw_brand,
+            "mainBrand": {
+              "src": $labelData.brand.imageSquare,
+              "alt": $labelData.raw_brand & " FLAG"
+            },
+            "badgeFlag": {
+              "src": $labelData.country.imageIcon,
+              "alt": $labelData.country_iso_code_3 & " FLAG"
+            },
+            "description": $labelData.country_iso_code_3
+          }
+      )
+    }
+  );
+
+  $empty
+    ? { "empty": true }
+    : {
+      "datasets": [
+        {
+          "data": $datasetData,
+          "backgroundColor": $datasetColors
+        }
+      ],
+      "formattedData": [[$formattedData]],
+      "labels": $brandCountryPairs,
+      "period": $data[0].period_type,
+      "legend": $config.legend,
+      "comparisonLine": { "data": $comparisonLines },
+      "brandsAvatar": { "data": $avatars }
+    }
+)

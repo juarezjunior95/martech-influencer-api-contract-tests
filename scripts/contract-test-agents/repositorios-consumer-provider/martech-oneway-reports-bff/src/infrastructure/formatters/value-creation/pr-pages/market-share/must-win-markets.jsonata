@@ -1,0 +1,93 @@
+/**
+ * 🎯 Component: Table (Must Win Markets - Market Share)
+ * 📍 Used on: PR Pages > Market Share > Must Win Markets
+ * 🔄 Input: value-creation_pr-pages_market-share_must-win-markets
+ * 📤 Output: Table rows (markets + mtd / l3m / ytd from periods MTD, L3M, YTD)
+ * 🔧 Config: centralized in $config below
+ */
+(
+  $config := {
+    "table_header": [
+      { "id": "markets", "title": "Markets", "subtitle": "vs LY" },
+      { "id": "mtd", "title": "Month" },
+      { "id": "l3m", "title": "L3M" },
+      { "id": "ytd", "title": "YTD" }
+    ],
+    "trend": {
+      "up": "positive",
+      "down": "negative"
+    },
+    "variation": {
+      "unit_measure": "pp"
+    }
+  };
+  $dsKey := $keys(datasources)[0];
+  $data := $lookup(datasources, $dsKey);
+  $count($data) = 0
+    ? { "empty": true }
+    : (
+      $toSafeNumber := function($value) {
+        $type($value) = "number"
+          ? $value
+          : (
+            $type($value) = "string" and $value != ""
+              ? $number($value)
+              : null
+          )
+      };
+      $cellFromRow := function($row) {
+        $exists($row) and $row
+          ? (
+            $numericValue := $toSafeNumber($row.vs_ly_pp);
+            $exists($numericValue) and $type($numericValue) = "number"
+              ? {
+                "value": $formatNumber($numericValue, '#,##0.0'),
+                "unitMeasure": $config.variation.unit_measure,
+                "trend": $getColorUpDown(
+                  $numericValue,
+                  $config.trend.up,
+                  $config.trend.down,
+                  {
+                    "rule": "standard",
+                    "includeZero": true
+                  }
+                )
+              }
+              : {
+                "value": "-"
+              }
+          )
+          : {
+            "value": "-"
+          }
+      };
+      $findByLabelAndPeriod := function($label, $period) {
+        $data[row_label = $label and period = $period][0]
+      };
+
+      {
+        "header": $config.table_header,
+        "rows": [
+          [
+            $map(
+              $distinct($data.row_label),
+              function($label) {
+                (
+                  $base := $data[row_label = $label][0];
+                  {
+                    "markets": {
+                      "value": $label,
+                      "images": $base.countriesImages
+                    },
+                    "mtd": $cellFromRow($findByLabelAndPeriod($label, "MTD")),
+                    "l3m": $cellFromRow($findByLabelAndPeriod($label, "L3M")),
+                    "ytd": $cellFromRow($findByLabelAndPeriod($label, "YTD"))
+                  }
+                )
+              }
+            )
+          ]
+        ]
+      }
+    )
+)

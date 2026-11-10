@@ -1,0 +1,75 @@
+(
+  $trend := $ensureArray(datasources.trend);
+  $snapshot := $ensureArray(datasources.snapshot);
+  $rows := $filter($trend, function($item, $index) { $index >= $count($trend) - 12 });
+
+  $title := function($row) {
+    (
+      $key := $lowercase($string($row.kpi ? $row.kpi : $row.kpi_name));
+      $key = "nr" or $key = "net_revenue" or $key = "net-revenue" ? "Net Revenue" :
+      $key = "cores" ? "CORES" :
+      $key = "market_share" or $key = "market-share" ? "Market Share" :
+    "Volume"
+    )
+  };
+
+  $roleLabel := function($role) {
+    $role = "actual" ? "AC (Actual)" :
+    $role = "budget" ? "BU (Budget)" :
+    "LY (Last Year)"
+  };
+
+  $series := function($role, $field) {
+    {
+      "role": $role,
+      "label": $roleLabel($role),
+      "values": [$map($rows, function($item) { $lookup($item, $field) })],
+      "formattedValues": [$map($rows, function($item) { $formatFinanceValue($lookup($item, $field)) })]
+    }
+  };
+
+  $comparison := function($label, $field, $directionField) {
+    {
+      "label": $label,
+      "deltas": [$map($rows, function($item) {
+        {
+          "formatted": $formatPercentValue($lookup($item, $field), $item.comp_unit_of_measure ? $item.comp_unit_of_measure : "%"),
+          "isPositive": $lookup($item, $directionField) = "up"
+        }
+      })]
+    }
+  };
+
+  $firstRow := $count($rows) > 0 ? $rows[0] : {};
+
+  $headerRow := $count($snapshot) > 0 ? $snapshot[0] : $firstRow;
+  $hasBudget := $count($filter($rows, function($item) { $exists($item.bu) })) > 0;
+  $hasData := $count($rows) > 0;
+
+  $base := {
+    "chartHeader": {
+      "title": $title($firstRow),
+      "measure": $exists($firstRow.unit_of_measure) ? $firstRow.unit_of_measure : "",
+      "period": $exists($headerRow.dt_end) ? $formatPeriodChip($headerRow.dt_ini, $headerRow.dt_end, $headerRow.period) : ""
+    },
+    "labels": [$map($rows, function($item) {
+      $exists($item.month_label) ? $item.month_label : $formatDateToMonth($item.dt_end)
+    })],
+    "series": $hasBudget
+      ? [$series("actual", "ac"), $series("budget", "bu"), $series("lastYear", "ly")]
+      : [$series("actual", "ac"), $series("lastYear", "ly")],
+
+    "comparisonRows": $hasBudget
+      ? [
+          $comparison("LY", "ac_vs_ly", "variationDirectionVsLy"),
+          $comparison("BU", "ac_vs_bu", "variationDirectionVsBu")
+        ]
+      : [
+          $comparison("LY", "ac_vs_ly", "variationDirectionVsLy")
+        ]
+  };
+
+  $hasData
+    ? $base
+    : $merge([$base, { "noticeMessage": "Data not available" }])
+)

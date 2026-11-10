@@ -1,0 +1,90 @@
+import { LineChartKpiData } from 'pages/pillars/ValueCreation/VolumePages/types';
+
+export const GlobalMovesLineChartMock: LineChartKpiData = {
+  period: 'MTD',
+  datasets: [
+    {
+      data: [
+        13000, 14000, 15000, 7000, 8000, 6500, 7000, 7500, 8000, 8500, 9000,
+        9500,
+      ],
+      pointBackgroundColor: '#EDDAB1',
+      borderColor: '#EDDAB1',
+    },
+    {
+      data: [10000, 12000, 13000, 15000, 16000, 17000, 18000, 19000],
+      pointBackgroundColor: '#D1A33C',
+      borderColor: '#D1A33C',
+    },
+  ],
+  formattedData: [
+    [
+      '13.0k',
+      '14.0k',
+      '15.0k',
+      '7.0k',
+      '8.0k',
+      '6.5k',
+      '7.0k',
+      '7.5k',
+      '8.0k',
+      '8.5k',
+      '9.0k',
+      '9.5k',
+    ],
+    [
+      '10.0k',
+      '12.0k',
+      '13.0k',
+      '15.0k',
+      '16.0k',
+      '17.0k',
+      '18.0k',
+      '19.0k',
+      '20.0k',
+      '21.0k',
+      '22.0k',
+      '23.0k',
+    ],
+  ],
+  labels: [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ],
+  highlightLabels: ['Aug'],
+  comparisonLine: {
+    data: [
+      {
+        title: 'vs LY',
+        data: [
+          { value: '2.4', measure: '%', color: '#49764B' },
+          { value: '-3.5', measure: '%', color: '#A20A0A' },
+          { value: '4.7', measure: '%', color: '#49764B' },
+          { value: '-5.9', measure: '%', color: '#A20A0A' },
+          { value: '6.8', measure: '%', color: '#49764B' },
+          { value: '7.3', measure: '%', color: '#49764B' },
+          { value: '8.1', measure: '%', color: '#49764B' },
+          { value: '9.1', measure: '%', color: '#49764B' },
+          { value: '-' },
+          { value: '-' },
+          { value: '-' },
+          { value: '-' },
+        ],
+      },
+    ],
+  },
+  legend: [
+    { color: '#eddab1', label: 'Previous Year', shape: 'thinPill' },
+    { color: '#d1a33c', label: 'Current Year', shape: 'thinPill' },
+  ],
+};

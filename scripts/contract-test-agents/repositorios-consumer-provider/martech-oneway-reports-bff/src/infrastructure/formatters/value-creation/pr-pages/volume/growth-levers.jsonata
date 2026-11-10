@@ -1,0 +1,105 @@
+/* *
+ * 🔢 Table
+ * 🎯 Component: Table
+ * 📍 Used on: Volume Pages
+ * 🔄 Input: datasource
+ * 📤 Output: Table card interface */
+(
+  $ds := $keys($.datasources)[0];
+  $data := $.datasources.$lookup($ds);
+  $pageType := $data[0].page_type;
+  $isGrowthLeversPage := $pageType in ["Growth Levers Global", "Growth Levers Country"];
+
+  $headerTitle :=
+    $isGrowthLeversPage ? "Growth Levers" :
+    $pageType = "Beyond Beer" ? "Expansion Brands" :
+    $pageType = "Global Brands" ? "Global Brands" :
+    "Priorities";
+
+  $config := {
+    "direction": {
+      "up": "#007800",
+      "down": "#B91C1C"
+    },
+    "comparative_unit": "%",
+    "growth_levers_order": [
+      "Superior Core",
+      "Lead Premium",
+      "Balanced Choices",
+      "Beyond Beer"
+    ],
+    "headers": [
+      {
+        "id": "priorities",
+        "title": $headerTitle,
+        "subtitle": "vs LY"
+      },
+      {
+        "id": "mtd",
+        "title": "Month"
+      },
+      {
+        "id": "l3m",
+        "title": "L3M"
+      },
+      {
+        "id": "ytd",
+        "title": "YTD"
+      }
+    ]
+  };
+
+  $field := $exists($data[0].priorities) ? "priorities" : "price_tier";
+
+  $normalizeRowKey := function($item) {
+    (
+      $rawKey := $lookup($item, $field);
+      $isGrowthLeversPage and $rawKey = "Non Alc Beer" ? "Balanced Choices" : $rawKey
+    )
+  };
+
+  $rowKeys := $isGrowthLeversPage
+    ? $filter(
+        $config.growth_levers_order,
+        function($label) {
+          $count(
+            $filter($data, function($item) { $normalizeRowKey($item) = $label })
+          ) > 0
+        }
+      )
+    : $distinct($map($data, function($item) { $normalizeRowKey($item) }));
+
+  $filterByKeyAndPeriod := function($key, $period) {
+    $filter($data, function($item) { $normalizeRowKey($item) = $key and $item.period = $period })
+  };
+
+  $toCellData := function($data) {
+    $count($data) = 0 ?
+    {"value": "-"} :
+    {
+      "value": $data.ac_vs_ly,
+      "unitMeasure": $config.comparative_unit,
+      "variationDirection": $lookup($config.direction, $data.variationDirectionVsLy)
+    }
+  };
+
+  $rows := $map(
+    $rowKeys,
+    function($rowLabel) {
+      {
+        "priorities": {
+          "key": $rowLabel,
+          "value": $rowLabel
+        },
+        "ytd": $toCellData($filterByKeyAndPeriod($rowLabel, "YTD")),
+        "l3m": $toCellData($filterByKeyAndPeriod($rowLabel, "L3M")),
+        "mtd": $toCellData($filterByKeyAndPeriod($rowLabel, "M"))
+      }
+    }
+  );
+
+  $count($data) = 0 ? { "empty": true } : {
+    "rows": [[ $rows ]],
+    "header": $config.headers
+  }
+)

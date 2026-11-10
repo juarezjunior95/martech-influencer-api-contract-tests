@@ -1,0 +1,124 @@
+/**
+ * 🔢 PERFORMANCE DETAILS FORMATTER
+ * 🎯 Component: Tabela de detalhe (país × ABI / Competitor)
+ * 📍 Used on: BrandPowerBook > Zone × Maturity > Performance details
+ * 🔄 Input: by-zone-maturity-performance-details
+ * 📤 Output: { header, rows } at the root — the pipeline joins to the component ID as performanceDetails (avoids duplicate performanceDetails).
+ */
+(
+  $dsKeys := $keys(datasources);
+  $data := $lookup(datasources, $dsKeys[0]);
+
+  $config := {
+    "variation": { "unit_measure": "pp" },
+    "direction": { "up": "#49764B", "down": "#A20A0A" },
+    "legend": [
+      { "label": "ABI", "color": "#EDCD20", "selected_color": "#EDDAB1" },
+      {
+    "label": "COMP",
+    "color":  "#46ca7b",
+    "selected_color": "#D3E3EE"
+}
+    ]
+  };
+
+  $level_1 :=( $distinct($lookup( $data,"is_comp")) = true ? "COMP" : "ABI");
+
+   $getLegend :=  
+    (
+    $level_1 = "ABI"? $config.legend[0] : $config.legend[1]
+    );
+
+
+  $variationDirectionLqKey := function($row) {
+    $exists($row.variationDirectionVsLq)
+      ? $row.variationDirectionVsLq
+      : ($row.ac_vs_lq > 0 ? "up" : "down")
+  };
+
+  $pickLatestRow := function($rows) {
+    (
+      $sorted := $sort($rows, function($left, $right) {
+        $toMillis($left.dt_ini) > $toMillis($right.dt_ini)
+      });
+      $count($sorted) > 0 ? $sorted[$count($sorted) - 1] : null
+    )
+  };
+
+  $rowsForCountry := function($countryCode) {
+    $filter(
+      $data,
+      function($row) {
+        $row.country_iso_code_3 = $countryCode and $uppercase($row.level_1) = $level_1
+      }
+    )
+  };
+
+  $buildCell := function($item) {
+    (
+
+    {
+      "id": { "value": $item.country_iso_code_3 },
+      "ac": {
+        "chartData": {
+          "data": [$item.ac],
+          "backgroundColor": [$getLegend.color],
+          "secondaryBackgroundColor": [$getLegend.selected_color]
+        }
+      },
+      "ly": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $lookup($config.direction, $item.variationDirectionVsLy),
+        "value": $item.ac_vs_ly
+      },
+      "lq": {
+        "unitMeasure": $config.variation.unit_measure,
+        "variationDirection": $lookup($config.direction, $variationDirectionLqKey($item)),
+        "value": $item.ac_vs_lq
+      },
+      "label": { "value": $item.abi_zone }
+    }
+    )
+  };
+
+  $cellsForCountry := function($countryCode) {
+    $pickLatestRow($rowsForCountry($countryCode
+))
+      ~> function($abiRow) { $abiRow != null ? [$buildCell($abiRow)] : [] }
+  };
+
+  $isEmpty := $count($data) = 0;
+  $distinctCountries := $isEmpty ? [] : $distinct($data.country_iso_code_3);
+  $orderedCountries := $isEmpty
+    ? []
+    : $sort($distinctCountries, function($left, $right) { $left > $right });
+
+  $tableHeader := $isEmpty
+    ? [
+        { "id": "label", "title": "" },
+        { "id": "id", "title": "" },
+        { "id": "ac", "title": "AC" },
+        { "id": "ly" },
+        { "id": "lq" }
+      ]
+    : [
+        { "id": "label", "title": "" },
+        { "id": "id", "title": "" },
+        { "id": "ac", "title": "AC" },
+        { "id": "ly", "title": "vs " & $formatLyQuarter($data[0].dt_end) },
+        { "id": "lq", "title": "vs " & $formatLqQuarter($data[0].dt_end) }
+      ];
+
+  $flatRows := $isEmpty
+    ? []
+    : $reduce(
+      $map($orderedCountries, $cellsForCountry),
+      function($accumulator, $countryPair) { $append($accumulator, $countryPair) },
+      []
+    );
+
+  {
+    "header": $tableHeader,
+    "rows": [[ $flatRows ]]
+  }
+)

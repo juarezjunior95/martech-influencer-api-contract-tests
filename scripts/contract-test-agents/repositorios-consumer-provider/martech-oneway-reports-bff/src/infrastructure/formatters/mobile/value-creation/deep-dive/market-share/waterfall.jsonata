@@ -1,0 +1,75 @@
+(
+  $tone := function($value, $direction) {
+    ($not($exists($value)) or $value = null) ? "neutral" :
+    $exists($direction)
+      ? ($lowercase($direction) = "up" ? "positive" : "negative")
+      : ($value >= 0 ? "positive" : "negative")
+  };
+
+  $rowType := function($value, $index, $lastIndex) {
+    $index = 0 ? "start" :
+    $index = $lastIndex ? "end" :
+    ($value > 0 ? "positive" : ($value < 0 ? "negative" : "neutral"))
+  };
+
+  $label := function($row) {
+    $row.label_value ? $row.label_value :
+    $row.step_name ? $row.step_name :
+    $row.country ? $row.country :
+    $row.brand ? $row.brand :
+    "-"
+  };
+
+  $formatBar := function($v) {
+    (
+      $not($exists($v)) or $type($v) != "number"
+        ? "-"
+        : (
+            $abs := $v < 0 ? -$v : $v;
+            $abs >= 1e9 ? ($formatNumber($v / 1e9, "#,##0.0") & "B") :
+            $abs >= 1e6 ? ($formatNumber($v / 1e6, "#,##0.0") & "M") :
+            $abs >= 1000 ? ($formatNumber($v / 1000, "#,##0.0") & "K") :
+            $formatNumber($v, "#,##0.0")
+          )
+    )
+  };
+
+  $raw := datasources.waterfall;
+  $rows := $ensureArray(
+    $exists($raw.large) and $count($raw.large) > 0 ? $raw.large :
+    $exists($raw.small) and $count($raw.small) > 0 ? $raw.small :
+    $raw
+  );
+  $lastIndex := $count($rows) - 1;
+  $firstRow := $count($rows) > 0 ? $rows[0] : {};
+  $hasData := $count($rows) > 0;
+
+  $base := {
+    "chartHeader": {
+      "title": "Market Share",
+      "period": $exists($firstRow.dt_end) ? $formatPeriodChip($firstRow.dt_ini, $firstRow.dt_end, ($firstRow.period_type ? $firstRow.period_type : $firstRow.period)) : "",
+      "measure": $exists($firstRow.unit_of_measure) ? $firstRow.unit_of_measure : "%"
+    },
+    "rows": [$map($rows, function($row, $index) {
+      (
+        $isCap := $index = 0 or $index = $lastIndex;
+        $value := $isCap
+          ? ($exists($row.ac) ? $row.ac : ($exists($row.delta) ? $row.delta : 0))
+          : ($exists($row.delta) ? $row.delta : ($exists($row.ac) ? $row.ac : 0));
+        $delta := $exists($row.vs_ly) ? $row.vs_ly : 0;
+        {
+          "title": $label($row),
+          "type": $rowType($value, $index, $lastIndex),
+          "value": $value,
+          "formattedBarLabel": $formatBar($value),
+          "formattedDelta": $formatPercentValue($delta, $row.comp_unit_of_measure ? $row.comp_unit_of_measure : "pp"),
+          "deltaTone": $tone($delta, $row.vs_ly_direction)
+        }
+      )
+    })]
+  };
+
+  $hasData
+    ? $base
+    : $merge([$base, { "noticeMessage": "Data not available" }])
+)

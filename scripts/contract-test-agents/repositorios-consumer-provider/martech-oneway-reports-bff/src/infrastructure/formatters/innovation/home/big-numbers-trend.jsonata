@@ -1,0 +1,72 @@
+/**
+ * INNOVATION BIG NUMBERS TREND FORMATTER
+ * Component: Innovation Home - Big Numbers Trend
+ * Used on: Innovation > Home
+ */
+(
+  $datasourceKeys := $keys(datasources);
+  $datasource := $lookup(datasources, $datasourceKeys[0]);
+
+  /* Format value - returns "-" for null/undefined values */
+  $formatValue := function($value) {
+    $exists($value) and $type($value) = "number" ?
+      $formatNumber($value, '#,##0.0')
+      : "-"
+  };
+
+  /* Map kpi_name for chart title */
+  $mapKpiToTitle := function($kpiName) {
+    $kpiName = "innovation_volume" ? "Innovation Volume" :
+    $kpiName = "innovation_nr" ? "Innovation Net Revenue" :
+    $kpiName
+  };
+
+  /* Map direction to trend */
+  $mapTrend := function($direction) {
+    $direction = "up" ? "positive" : "negative"
+  };
+
+  /* Get the reference dt_end (most recent date) - sort descending and get first */
+  $sortedDates := $sort($datasource.dt_end, function($a, $b) { $a < $b });
+  $referenceDtEnd := $sortedDates[0];
+
+  /* Get unique kpi names - sorted alphabetically */
+  $kpiNames := $sort($distinct($datasource.kpi_name), function($a, $b) { $a < $b });
+
+  /* Build output for each kpi */
+  $kpiNames.(
+    $kpi := $;
+    $kpiData := $datasource[kpi_name = $kpi];
+    
+    /* Get the big number record filtered by reference dt_end (last item if multiple) */
+    $bigNumberRecords := $kpiData[dt_end = $referenceDtEnd];
+    $bigNumberRecord := $bigNumberRecords[-1];
+    
+    /* Get all records for chartLineData, sorted by dt_end ascending */
+    $recordsArray := $kpiData ? $append([], $kpiData) : [];
+    $chartLineRecords := $count($recordsArray) > 0 ? $sort($recordsArray, function($a, $b) { $a.dt_end > $b.dt_end }) : [];
+
+    {
+      "chartTitle": $mapKpiToTitle($kpi),
+      "chartPeriod": $bigNumberRecord.refreshMonthLabel & " " & $bigNumberRecord.vs_ly_label_suffix,
+      "bigNumberData": $count($bigNumberRecord) < 1 ? [] : [
+        {
+          "bigNumber": {
+            "value": $formatValue($bigNumberRecord.ac_vs_ly),
+            "measure": $bigNumberRecord.comp_unit_of_measure,
+            "trend": $mapTrend($bigNumberRecord.variationDirectionVsLy)
+          },
+          "comparison": {
+            "label": "vs",
+            "value": "LY"
+          },
+          "secondaryInfo": {
+            "label": "[ # ]",
+            "value": $formatValue($bigNumberRecord.ac)
+          }
+        }
+      ],
+      "chartLineData": [$chartLineRecords.ac]
+    }
+  )
+)

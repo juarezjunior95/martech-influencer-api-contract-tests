@@ -1,0 +1,1 @@
+export { useTotalAppliedFilters } from './useTotalAppliedFilters';

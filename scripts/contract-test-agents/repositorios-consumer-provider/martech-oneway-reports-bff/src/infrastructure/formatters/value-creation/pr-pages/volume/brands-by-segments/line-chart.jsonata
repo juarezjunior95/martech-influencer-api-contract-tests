@@ -1,0 +1,156 @@
+/* *
+ * 🔢 Line charts (v2)
+ * 🎯 Component: Line
+ * 📍 Used on: Volume Pages
+ * 🔄 Input: datasource (dt_end and/or year+month); root may be { datasources } or { data: { datasources } } (tests/API)
+ * 📤 Output: Line chart interface */
+(
+  $dsRoot := $exists($.datasources) ? $.datasources : ($exists($.data) and $exists($.data.datasources) ? $.data.datasources : {});
+  $ds := $keys($dsRoot)[0];
+  $rawDataLookup := $lookup($dsRoot, $ds);
+  $rawData := $type($rawDataLookup) = "array" ? $rawDataLookup : ($exists($rawDataLookup) ? [$rawDataLookup] : []);
+  $isEmpty := $count($rawData) = 0;
+  $isNrKpiView := $count($rawData[nr = "nr"]) > 0;
+  $isMarketShareKpiView := $count($rawData[kpi_name = "market_share"]) > 0;
+  $config := {
+    "direction": { "up": "#007800", "down": "#B91C1C" },
+    "comparative_unit": "%",
+    "line_colors": { "previousYear": "#EDDAB1", "budget": "#99D6FF", "currentYear": "#D1A33C" },
+    "period": "MTD",
+    "labels": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  };
+  $isNumber := function($value) { $value != null and $type($value) = "number" };
+  $formatAbreviatedNumber := function($n) {
+    (
+      $abs := $abs($n);
+      $suffix := $abs >= 1000000
+        ? "M"
+        : $abs >= 1000
+          ? "k"
+          : "";
+      $divisor := $abs >= 1000000
+        ? 1000000
+        : $abs >= 1000
+          ? 1000
+          : 1;
+      $val := $n / $divisor;
+      $s := $string($round($val, 1));
+      $formatted := ($val > -1 and $val < 1 and $val != 0 and $substring($s, 0, 1) = ".") ? "0" & $s : $s;
+      $formatted & $suffix
+    )
+  };
+  $formatComparisonValue := function($value) { $isNumber($value) ? $formatNumber($value, "#,##0.0") : "-" };
+  $buildComparisonLine := function(
+    $title,
+    $valueField,
+    $directionField,
+    $currentYear,
+    $data,
+    $measureSuffix
+  ) {
+    {
+      "title": $title,
+      "data": $map(
+        $config.labels,
+        function($monthLabel) {
+          (
+            $dataOfMonth := $data[month = $monthLabel and year = $currentYear][0];
+            $metricValue := $lookup($dataOfMonth, $valueField);
+            $hasValue := $isNumber($metricValue);
+            $hasValue
+              ? {
+                "value": $formatComparisonValue($metricValue),
+                "measure": $measureSuffix,
+                "color": $metricValue >= 0 ? $config.direction.up : $config.direction.down
+              }
+              : { "value": "-" }
+          )
+        }
+      )
+    }
+  };
+  $legendBase := [
+    { "color": $config.line_colors.previousYear, "label": "Previous Year", "shape": "thinPill" },
+    { "color": $config.line_colors.currentYear, "label": "Current Year", "shape": "thinPill" }
+  ];
+  $budgetLegend := [{ "color": $config.line_colors.budget, "label": "Budget", "shape": "thinPill" }];
+  /* Enrich: prefer dt_end; otherwise use year + numeric month (API rows without dt_end) */
+  $data := $map(
+    $rawData,
+    function($item) {
+      (
+        $hasDt := $exists($item.dt_end) and $item.dt_end != null and $string($item.dt_end) != "";
+        $hasDt
+          ? (
+            $millis := $toMillis($item.dt_end);
+            $merge([$item, { "year": $number($fromMillis($millis, "[Y0001]")), "month": $fromMillis($millis, "[MNn,*-3]") }])
+          )
+          : (
+            $yr := $number($item.year);
+            $moNum := $item.month;
+            $monthStr := ($type($moNum) = "number" and $moNum >= 1 and $moNum <= 12) ? $config.labels[$moNum - 1] : $moNum;
+            $merge([$item, { "year": $yr, "month": $monthStr }])
+          )
+      )
+    }
+  );
+  $years := $sort($distinct($data.year));
+  $currentYear := $years[-1];
+  $previousYear := $years[0];
+  $currentYearData := $data[year = $currentYear].ac;
+  $previousYearData := $data[year = $previousYear].ly;
+  $budgetData := $map($data[year = $currentYear], function($item) { $isNumber($item.bu) ? $item.bu : null });
+  $budgetValues := $filter($budgetData, function($item) { $isNumber($item) });
+  $hasBu := $count($budgetValues) > 0;
+  $allValues := $append($data.ac, $budgetValues);
+  $numericForScale := $filter($allValues, function($v) { $isNumber($v) });
+  $lineChartMinAc := $count($numericForScale) > 0 ? $min($numericForScale) : 0;
+  $lineChartMaxAc := $count($numericForScale) > 0 ? $max($numericForScale) : 0;
+  $range := $lineChartMaxAc - $lineChartMinAc;
+  $rangePadding := $range * 0.5;
+  $suggestedMin := $round($lineChartMinAc - $rangePadding, 1);
+  $suggestedMax := $round($lineChartMaxAc + $rangePadding, 1);
+  $currentDataset := {
+    "label": "Current Year",
+    "data": [$currentYearData],
+    "pointBackgroundColor": $config.line_colors.currentYear,
+    "borderColor": $config.line_colors.currentYear
+  };
+  $budgetDataset := {
+    "label": "Budget",
+    "data": [$budgetData],
+    "pointBackgroundColor": $config.line_colors.budget,
+    "borderColor": $config.line_colors.budget
+  };
+  $previousDataset := {
+    "label": "Previous Year",
+    "data": [$previousYearData],
+    "pointBackgroundColor": $config.line_colors.previousYear,
+    "borderColor": $config.line_colors.previousYear
+  };
+  $datasets := $hasBu ? [$currentDataset, $budgetDataset, $previousDataset] : [$currentDataset, $previousDataset];
+  $formattedCurrentYearData := $map($currentYearData, function($val) { $isNumber($val) ? $formatAbreviatedNumber($val) : "-" });
+  $formattedData := [[$formattedCurrentYearData]];
+  $vsLyComparison := $buildComparisonLine("vs LY", "ac_vs_ly", "variationDirectionVsLy", $currentYear, $data, $isMarketShareKpiView ? "pp" : $config.comparative_unit);
+  $secondaryComparison := $isMarketShareKpiView
+    ? $buildComparisonLine("Vol. vs LY", "vol_ac_vs_ly", "variationDirectionVolVsLy", $currentYear, $data, $config.comparative_unit)
+    : $buildComparisonLine("vs BU", "ac_vs_bu", "variationDirectionVsBu", $currentYear, $data, $config.comparative_unit);
+  $comparisonLineBase := $append([$vsLyComparison], [$secondaryComparison]);
+  $comparisonLineData := $isNrKpiView
+    ? $append($comparisonLineBase, [$buildComparisonLine("NR/hl vs LY", "per_hl_vs_ly", "variationDirectionPerHlVsLy", $currentYear, $data, $config.comparative_unit)])
+    : $comparisonLineBase;
+  $legend := $hasBu ? $append([$legendBase[0]], $append($budgetLegend, [$legendBase[1]])) : $legendBase;
+  ($isEmpty
+    ? { "empty": true }
+    : {
+      "datasets": $datasets,
+      "labels": $config.labels,
+      "highlightLabels": [$data[-1].month],
+      "formattedData": $formattedData,
+      "period": $config.period,
+      "legend": $legend,
+      "comparisonLine": { "data": $comparisonLineData },
+      "suggestedMin": $suggestedMin,
+      "suggestedMax": $suggestedMax
+    })
+)

@@ -1,0 +1,254 @@
+/**
+ * BRAND ANALYSIS BRAND POWER OCCASION BASED SALIENCE FORMATTER (BFF)
+ * Based on frontend formatters:
+ * - occasionAbiFormatter.jsonata
+ * - occasionCompetitorFormatter.jsonata
+ */
+(
+  $rawDatasources := $exists(datasources)
+    ? datasources
+    : (
+      $exists(components) and $count(components) > 0 and $exists(components[0].data.datasources)
+        ? components[0].data.datasources
+        : {}
+    );
+
+  $source := $lookup(
+    $rawDatasources,
+    "portfolio-brand_brand-analysis_brand-power_occasion-based-salience_occasion-based-salience"
+  );
+
+  $asArray := function($value) {
+    $type($value) = "array" ? $value : ($exists($value) ? [$value] : [])
+  };
+
+  $toNumber := function($value) {
+    $type($value) = "number"
+      ? $value
+      : (
+        $type($value) = "string" and $match($trim($value), /^[-+]?[0-9]*[.]?[0-9]+$/)
+          ? $number($trim($value))
+          : undefined
+      )
+  };
+
+  $getDirection := function($comparison) {
+    (
+      $val := $toNumber($comparison);
+      $exists($val) ? ($val >= 0 ? "up" : "down") : "down"
+    )
+  };
+
+  $isGenericBrandValue := function($value) {
+    $exists($value) and (
+      $lowercase($trim($string($value))) = "all" or
+      $lowercase($trim($string($value))) = "n/a" or
+      $trim($string($value)) = ""
+    )
+  };
+
+  $resolveBrandKey := function($item) {
+    (
+      $subBrand := $item.sub_brand;
+      $rawBrand := $item.raw_brand;
+      $level3 := $item.level_3;
+
+      $not($isGenericBrandValue($subBrand))
+        ? $subBrand
+        : (
+          $not($isGenericBrandValue($rawBrand))
+            ? $rawBrand
+            : $level3
+        )
+    )
+  };
+
+  $normalize := function($item) {
+    (
+      $comparison := $exists($item.ac_vs_ly) ? $item.ac_vs_ly : $item.comparison;
+
+      {
+        "level": $item.level_4,
+        "ac": $toNumber($item.ac),
+        "comparison": $toNumber($comparison),
+        "variation_direction": $exists($item.variation_direction)
+          ? $item.variation_direction
+          : $getDirection($comparison),
+        "brand_key": $resolveBrandKey($item),
+        "raw_brand": $item.raw_brand
+      }
+    )
+  };
+
+  $ds := $map($asArray($source), $normalize)[$exists(level)];
+  $levels := $asArray($distinct($ds.level));
+
+  $grouped := $reduce(
+    $ds,
+    function($acc, $item) {
+      $merge([
+        $acc,
+        { $item.level: $append($lookup($acc, $item.level), $item) }
+      ])
+    },
+    {}
+  );
+
+  $validBrandKeys := $asArray(
+    $distinct(
+      $filter(
+        $ds.brand_key,
+        function($v) {
+          $exists($v) and $not($isGenericBrandValue($v))
+        }
+      )
+    )
+  );
+
+  $validRawBrands := $asArray(
+    $distinct(
+      $filter(
+        $ds.raw_brand,
+        function($v) {
+          $exists($v) and $not($isGenericBrandValue($v))
+        }
+      )
+    )
+  );
+
+  $hasCompletePairs :=
+    $count($levels) > 0 and
+    $count(
+      $filter(
+        $levels,
+        function($level) {
+          $count($asArray($lookup($grouped, $level))) != 2
+        }
+      )
+    ) = 0;
+
+  $isCompetitor :=
+    $hasCompletePairs and
+    ($count($validBrandKeys) > 1 or $count($validRawBrands) > 1);
+
+  $isEmpty := $count($ds) = 0;
+
+  $config := {
+    "background_color": {
+      "bars": "#e8d19d",
+      "bars_comp": "#a0aeb7"
+    },
+    "unit_measure": {
+      "points_percent": "pp"
+    }
+  };
+
+  $unitMeasure := $config.unit_measure.points_percent;
+
+  $isEmpty
+    ? { "empty": true }
+    : (
+      $isCompetitor
+        ? {
+          "datasets": [
+            {
+              "type": "bar",
+              "data": $map($levels, function($level) {
+                (
+                  $items := $asArray($lookup($grouped, $level));
+                  $items[0].ac
+                )
+              }),
+              "backgroundColor": $map($levels, function() {
+                $config.background_color.bars
+              })
+            },
+            {
+              "type": "bar",
+              "data": $map($levels, function($level) {
+                (
+                  $items := $asArray($lookup($grouped, $level));
+                  $items[1].ac
+                )
+              }),
+              "backgroundColor": $map($levels, function() {
+                $config.background_color.bars_comp
+              })
+            }
+          ],
+          "labels": $levels,
+          "variation_caption": {
+            "title": "",
+            "subtitle": "",
+            "variationsRows": {
+              "kpi": {
+                "data": $map($levels, function($level) {
+                  (
+                    $items := $asArray($lookup($grouped, $level));
+                    {
+                      "variationsGroup": [
+                        {
+                          "variation": $string($items[0].comparison),
+                          "direction": $items[0].variation_direction,
+                          "unit_of_measure": $unitMeasure
+                        },
+                        {
+                          "variation": $string($items[1].comparison),
+                          "direction": $items[1].variation_direction,
+                          "unit_of_measure": $unitMeasure
+                        }
+                      ]
+                    }
+                  )
+                })
+              }
+            }
+          },
+          "paddingTop": 20
+        }
+        : {
+          "datasets": [
+            {
+              "type": "bar",
+              "data": $map($levels, function($level) {
+                (
+                  $items := $asArray($lookup($grouped, $level));
+                  $values := $filter($items.ac, function($v) { $exists($v) });
+                  $count($values) > 0 ? $round(($sum($values) / $count($values)), 1) : 0
+                )
+              }),
+              "backgroundColor": $map($levels, function() {
+                $config.background_color.bars
+              })
+            }
+          ],
+          "labels": $levels,
+          "variation_caption": {
+            "title": "",
+            "subtitle": "",
+            "variationsRows": {
+              "kpi": {
+                "data": $map($levels, function($level) {
+                  (
+                    $items := $asArray($lookup($grouped, $level));
+                    {
+                      "variationsGroup": $map(
+                        $items,
+                        function($item) {
+                          {
+                            "variation": $string($item.comparison),
+                            "direction": $item.variation_direction,
+                            "unit_of_measure": $unitMeasure
+                          }
+                        }
+                      )
+                    }
+                  )
+                })
+              }
+            }
+          },
+          "paddingTop": 20
+        }
+    )
+)

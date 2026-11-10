@@ -1,0 +1,229 @@
+/**
+ * 🎯 Category Health Overview
+ * 📍 Used on: Category > Category Health > Overview
+ * 🔄 Input: category_category-health_overview
+ * 📤 Output: tableData with header and rows grouped by maturity
+ * 📌 Sort: Global (N/A) -> M(highest) -> ... -> M(lowest)
+ * 📌 KPIs: Volume (bv) -> BICL (bicl) -> SOT (sot) -> Participation (bp) -> WMTBB (wmtbb)
+ * 📌 Headers values vary by Product Type (category): Beer, Beyond Beer, Beer + Beyond Beer
+ */
+(
+  $config := {
+    "default_ly_direction": "neutral",
+    "maturity_display": { "N/A": "Global" },
+    "global_icon": { "value": "Global", "icon": "World" },
+    "global_iso": "ABI",
+    "kpi_fields": {
+      "cat_health_volume": "bv",
+      "cat_health_icl": "bicl",
+      "cat_health_sot": "sot",
+      "p4w": "bp",
+      "wmtbb": "wmtbb"
+    },
+    "all_kpis": ["cat_health_volume", "cat_health_icl", "cat_health_sot", "p4w", "wmtbb"],
+    "category_header_titles": {
+      "Beer": {
+        "volume": "Beer Volume",
+        "bicl": "BICL",
+        "sot": "Share of Throat",
+        "participation": "Beer Participation",
+        "wmtbb": "WMTBB"
+      },
+      "Beyond Beer": {
+        "volume": "BYB Volume",
+        "bicl": "BYB ICL",
+        "sot": "Share of Throat",
+        "participation": "BYB Participation",
+        "wmtbb": "WMTBB"
+      },
+      "Beer + Beyond Beer": {
+        "volume": "B+BYB Volume",
+        "bicl": "B+BYB ICL",
+        "sot": "Share of Throat",
+        "participation": "B+BYB Participation",
+        "wmtbb": "WMTBB"
+      }
+    },
+    "category_tooltips": {
+      "Beer": {
+        "volume": "Total beer volume consumed by legal drinking age consumers across all brewers and brands in the market.",
+        "bicl": "BICL = Beer Industry Consumption Level. This represents the amount of beer consumed per legal drinking age consumer in the market.\n\nBICL = Beer Volume / # LDA+ Consumers",
+        "sot": "The share of beer within total alcohol.",
+        "participation": "% of the legal drinking age population who consume beer (every 4 weeks)",
+        "wmtbb": "WMTBB = Working Minutes to Buy Beer. Measures the amount of time the average person in the market needs to work to be able to afford a 1/2 liter of beer.\n\nWMTBB = Avg Beer $ per half liter / (Household consumption per capita / working minutes per year)"
+      },
+      "Beyond Beer": {
+        "volume": "Total beyond beer volume consumed by legal drinking age consumers across all brewers and brands in the market.",
+        "bicl": "BYB ICL = Beyond Beer Industry Consumption Level. This represents the amount of beyond beer consumed per legal drinking age consumer in the market.\n\nBYB ICL = Beyond Beer Volume / # LDA+ Consumers",
+        "sot": "The share of beyond beer within total alcohol.",
+        "participation": "% of the legal drinking age population who consume beyond beer (every 4 weeks)",
+        "wmtbb": "WMTBB = Working Minutes to Buy Beer. Measures the amount of time the average person in the market needs to work to be able to afford a 1/2 liter of beer.\n\nWMTBB = Avg Beer $ per half liter / (Household consumption per capita / working minutes per year)"
+      },
+      "Beer + Beyond Beer": {
+        "volume": "Total beer + beyond beer volume consumed by legal drinking age consumers across all brewers and brands in the market.",
+        "bicl": "B+BYB ICL = Beer + Beyond Beer Industry Consumption Level. This represents the amount of beer + beyond beer consumed per legal drinking age consumer in the market.\n\nB+BYB ICL = B+BYB Volume / # LDA+ Consumers",
+        "sot": "The share of beer+beyond beer within total alcohol.",
+        "participation": "% of the legal drinking age population who consume beer + beyond beer (every 4 weeks)",
+        "wmtbb": "WMTBB = Working Minutes to Buy Beer. Measures the amount of time the average person in the market needs to work to be able to afford a 1/2 liter of beer.\n\nWMTBB = Avg Beer $ per half liter / (Household consumption per capita / working minutes per year)"
+      }
+    },
+    "kpi_headers": [
+      {
+        "id": "beerVolume",
+        "categoryTitleKey": "volume",
+        "tooltipContent": "Beer Volume metrics",
+        "prefix": "bv",
+        "fyTitle": "FY [ k hl ]",
+        "vslyTitle": "vs LY"
+      },
+      {
+        "id": "bicl",
+        "categoryTitleKey": "bicl",
+        "tooltipContent": "BICL metrics",
+        "prefix": "bicl",
+        "fyTitle": "FY [ L/Year ]",
+        "vslyTitle": "vs LY"
+      },
+      {
+        "id": "shareOfThroat",
+        "categoryTitleKey": "sot",
+        "tooltipContent": "Share of Throat metrics",
+        "prefix": "sot",
+        "fyTitle": "FY [ % ]",
+        "vslyTitle": "vs LY"
+      },
+      {
+        "id": "beerParticipation",
+        "categoryTitleKey": "participation",
+        "tooltipContent": "Beer Participation metrics",
+        "prefix": "bp",
+        "fyTitle": "FY [ % ]",
+        "vslyTitle": "vs LY"
+      },
+      {
+        "id": "wmtbb",
+        "categoryTitleKey": "wmtbb",
+        "tooltipContent": "WMTBB metrics",
+        "prefix": "wmtbb",
+        "fyTitle": "FY [ Min ]",
+        "vslyTitle": "vs LY"
+      }
+    ]
+  };
+
+  $dsKey := $keys(datasources)[0];
+  $ds := $lookup(datasources, $dsKey);
+  $rawData := $exists($ds.data) ? $ds.data : $ds;
+  $category := $count($rawData) > 0 ? $rawData[0].category : "";
+
+  $maturityRank := function($m) {
+    $m = "N/A" ? 0 :
+      ($match($m, /^M(\d+)$/) ? (99 - $number($match($m, /^M(\d+)$/).groups[0])) : 100)
+  };
+
+  $nonGlobalData := $filter($rawData, function($r) { $r.maturity != "N/A" });
+  $countryData := $filter($nonGlobalData, function($r) { $r.country_iso_code_3 != $config.global_iso });
+  $maturitySummaryData := $filter($nonGlobalData, function($r) { $r.country_iso_code_3 = $config.global_iso });
+
+  $nonGlobalMaturities := $sort(
+    $append([], $distinct($countryData.maturity)),
+    function($a, $b) { $maturityRank($a) > $maturityRank($b) }
+  );
+
+  $buildKpiFields := function($dataRows) {
+    $merge($map($config.all_kpis, function($kpiName) {
+      (
+        $prefix := $lookup($config.kpi_fields, $kpiName);
+        $kpiRow := $filter($dataRows, function($r) { $r.kpi_name = $kpiName })[0];
+        $kpiRow
+          ? {
+              ($prefix & "_fy"): $formatValue($kpiRow.ac) & (($kpiName = "p4w" or $kpiName = "cat_health_sot") ? "" & $kpiRow.unit_of_measure : ""),
+              ($prefix & "_vsly"): {
+                "value": $formatValue($kpiRow.ac_vs_ly),
+                "unitMeasure": $kpiRow.ac_vs_ly != null ? ($kpiName = "wmtbb" ? "" : $kpiRow.comp_unit_of_measure) : "",
+                "variationDirection": ($kpiRow.ac_vs_ly) ? $kpiRow.variationDirectionVsLy : $config.default_ly_direction
+              }
+            }
+          : {
+              ($prefix & "_fy"): "-",
+              ($prefix & "_vsly"): "-"
+            }
+      )
+    }))
+  };
+
+  $row := function($group, $country, $data, $isHighlight) {
+    $merge([
+      { "rowGroup": $group },
+      $isHighlight ? { "highlight": true } : {},
+      { "countries": $country },
+      $buildKpiFields($data)
+    ])
+  };
+
+  $globalData := $filter($rawData, function($r) { $r.maturity = "N/A" });
+
+  $buildMaturityGroupObj := function($maturity) {
+    (
+      $matRows := $filter($countryData, function($row) { $row.maturity = $maturity });
+      $distinctCountries := $append([], $distinct($matRows.country_iso_code_3));
+      $countryRows := $reduce($distinctCountries, function($acc, $countryIso) {
+        (
+          $cData := $filter($matRows, function($row) { $row.country_iso_code_3 = $countryIso });
+          $append($acc, [$row($maturity, { "value": $countryIso, "zone": $cData[0].abi_zone, "img": $cData[0].country.imageIcon }, $cData, false)])
+        )
+      }, []);
+      $summary := $filter($maturitySummaryData, function($row) { $row.maturity = $maturity });
+      $hRow := $count($summary) > 0 ? $row($maturity, { "value": $maturity }, $summary, true) : null;
+      { "rows": $hRow != null ? $append([$hRow], $countryRows) : $countryRows }
+    )
+  };
+
+  $globalGroupObj := $count($globalData) > 0 ? {
+    "rows": [$row("Global", $config.global_icon, $globalData, false)]
+  } : null;
+
+  $maturityGroupObjs := $reduce($nonGlobalMaturities, function($acc, $maturity) {
+    $append($acc, [$buildMaturityGroupObj($maturity)])
+  }, []);
+
+  $realGroupObjs := $append(
+    $globalGroupObj != null ? [$globalGroupObj] : [],
+    $maturityGroupObjs
+  );
+
+  $groupObjs := $count($realGroupObjs) >= 2
+    ? $realGroupObjs
+    : $append($realGroupObjs, [{ "rows": [] }]);
+
+  $rows := $map($groupObjs, function($g) { $g.rows });
+
+  $titles := $lookup($config.category_header_titles, $category);
+  $tooltipsForCategory := $lookup($config.category_tooltips, $category);
+  $header := $append(
+    [{ "id": "countries", "title": "Countries" }],
+    $map($config.kpi_headers, function($h) {
+      (
+        $resolvedTooltip := $lookup($tooltipsForCategory, $h.categoryTitleKey);
+        {
+          "id": $h.id,
+          "title": ($lookup($titles, $h.categoryTitleKey) ? $lookup($titles, $h.categoryTitleKey) : $h.id),
+          "tooltipContent": $resolvedTooltip ? $resolvedTooltip : $h.tooltipContent,
+          "children": [
+            { "id": $h.prefix & "_fy", "title": $h.fyTitle },
+            { "id": $h.prefix & "_vsly", "title": $h.vslyTitle }
+          ]
+        }
+      )
+    })
+  );
+
+  $count($rawData) = 0
+    ? { "empty": true }
+    : {
+        "tableData": {
+          "header": $header,
+          "rows": $rows
+        }
+      }
+)

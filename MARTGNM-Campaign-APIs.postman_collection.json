@@ -1,0 +1,1262 @@
+{
+  "info": {
+    "name": "MARTGNM - Campaign APIs (Sprint 195)",
+    "description": "Postman collection gerada a partir do Swagger oficial da API.\n\nAPI: Martech Connect Influencer API\nSwagger source: https://services.martech.uat.mybees-platform.dev/api/martech-connect-influencer-service/v1/docs\n\nHistórias cobertas:\n- MARTGNM-5249: POST /v1/campaigns (criar campanha + partners inline), PATCH /v1/campaigns/{id} (update campos + partners op: add/replace/remove)\n- MARTGNM-5254: GET /v1/partners/search, GET /v1/campaigns/{id}/overview/partners (com campos mockados: profileImageUrl, country, topics, followersCount, engagementRate, lda, status)\n- MARTGNM-5256: GET /v1/campaigns/{id}/overview, GET /v1/campaigns/{id}/overview/partners\n\nVariáveis a configurar:\n- base_url: URL base do ambiente (UAT ou SIT)\n- token: Bearer token de autenticação\n- campaign_id: preenchido automaticamente pelo C1 (POST /campaigns)\n- partner_id: preenchido automaticamente pelo GET /partners/search",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://services.martech.uat.mybees-platform.dev/api/martech-connect-influencer-service",
+      "description": "UAT: https://services.martech.uat.mybees-platform.dev/api/martech-connect-influencer-service | SIT: trocar 'uat' por 'sit'",
+      "type": "string"
+    },
+    { "key": "token", "value": "YOUR_BEARER_TOKEN_HERE", "type": "string" },
+    { "key": "campaign_id", "value": "", "description": "Preenchido automaticamente pelo C1 (POST /campaigns)", "type": "string" },
+    { "key": "partner_id", "value": "", "description": "Preenchido automaticamente pelo GET /partners/search", "type": "string" },
+    { "key": "brand_id", "value": "", "description": "Buscar via GET /v1/brands", "type": "string" },
+    { "key": "megaplatform_id", "value": "", "description": "Buscar via GET /v1/megaplatforms", "type": "string" },
+    { "key": "market_id", "value": "", "description": "Buscar via GET /v1/markets", "type": "string" },
+    { "key": "platform_id", "value": "", "description": "Buscar via GET /v1/platforms", "type": "string" },
+    { "key": "partner_type_id", "value": "", "description": "Buscar via GET /v1/partner-types", "type": "string" },
+    { "key": "intention_id", "value": "", "description": "Buscar via GET /v1/partner-activation-intentions", "type": "string" },
+    { "key": "zone_id", "value": "", "description": "Preenchido automaticamente pelo GET /v1/zones. Necessário para criar um market não-GHQ (com zoneId válido) que aparece no GET /v1/markets.", "type": "string" },
+    { "key": "ghq_market_id", "value": "PREENCHER_COM_ID_GHQ", "description": "ID do market GHQ (zoneId null = global). O market criado com zoneId null é considerado GHQ e filtrado no GET /v1/markets. Preencher com o UUID do market criado com zoneId:null.", "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "🔧 0. Reference Data (buscar IDs para preencher variáveis)",
+      "description": "Execute esses endpoints primeiro para buscar os IDs reais do ambiente e preencher as variáveis da collection.\n\nSe os GETs retornarem lista vazia, use a subpasta '🌱 Seed Data' para criar os dados necessários.",
+      "item": [
+        {
+          "name": "🌱 Seed Data (criar dados se ambiente estiver vazio)",
+          "description": "Use esses requests APENAS se os GETs de Reference Data retornarem items:[]. Cada POST cria um registro e salva o id na variável correspondente.",
+          "item": [
+            {
+              "name": "POST /v1/brands — Criar brand de teste",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                "const body = pm.response.json();",
+                "pm.collectionVariables.set('brand_id', body.id);",
+                "console.log('brand_id criado:', body.id);"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"[QA] Brand Sprint 195\",\n  \"isGlobal\": false\n}" },
+                "url": { "raw": "{{base_url}}/v1/brands", "host": ["{{base_url}}"], "path": ["v1", "brands"] },
+                "description": "Cria uma brand de teste e salva o id em brand_id."
+              }
+            },
+            {
+              "name": "PATCH /v1/brands/{id} — Ativar brand",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "console.log('brand ativada:', pm.collectionVariables.get('brand_id'));"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"active\": true\n}" },
+                "url": { "raw": "{{base_url}}/v1/brands/{{brand_id}}", "host": ["{{base_url}}"], "path": ["v1", "brands", "{{brand_id}}"] },
+                "description": "Ativa a brand recém-criada. Registros criados via POST podem ficar inativos por padrão e não aparecer no GET."
+              }
+            },
+            {
+              "name": "POST /v1/megaplatforms — Criar megaplatform de teste",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                "const body = pm.response.json();",
+                "pm.collectionVariables.set('megaplatform_id', body.id);",
+                "console.log('megaplatform_id criado:', body.id);"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"[QA] Megaplatform Sprint 195\"\n}" },
+                "url": { "raw": "{{base_url}}/v1/megaplatforms", "host": ["{{base_url}}"], "path": ["v1", "megaplatforms"] },
+                "description": "Cria uma megaplatform de teste e salva o id em megaplatform_id."
+              }
+            },
+            {
+              "name": "PATCH /v1/megaplatforms/{id} — Ativar megaplatform",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "console.log('megaplatform ativada:', pm.collectionVariables.get('megaplatform_id'));"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"active\": true\n}" },
+                "url": { "raw": "{{base_url}}/v1/megaplatforms/{{megaplatform_id}}", "host": ["{{base_url}}"], "path": ["v1", "megaplatforms", "{{megaplatform_id}}"] },
+                "description": "Ativa a megaplatform recém-criada."
+              }
+            },
+            {
+              "name": "POST /v1/zones — Criar zone de teste",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                "const body = pm.response.json();",
+                "pm.collectionVariables.set('zone_id', body.id);",
+                "console.log('✅ zone_id criado:', body.id);",
+                "console.log('⚠️ Execute PATCH /v1/zones/{id} — Ativar zone ANTES de criar o market!');"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"[QA] Zone Sprint 195\"\n}" },
+                "url": { "raw": "{{base_url}}/v1/zones", "host": ["{{base_url}}"], "path": ["v1", "zones"] },
+                "description": "Cria uma zone de teste e salva o id em zone_id.\nEXECUTE O PATCH /v1/zones EM SEGUIDA para ativar a zone."
+              }
+            },
+            {
+              "name": "PATCH /v1/zones/{id} — Ativar zone",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "console.log('✅ zone ativada:', pm.collectionVariables.get('zone_id'));",
+                "console.log('Agora execute POST /v1/markets com zone_id para criar um market não-GHQ.');"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"active\": true\n}" },
+                "url": { "raw": "{{base_url}}/v1/zones/{{zone_id}}", "host": ["{{base_url}}"], "path": ["v1", "zones", "{{zone_id}}"] },
+                "description": "Ativa a zone recém-criada.\n\nZones criadas via POST nascem inativas — igual aos markets.\nSem ativar a zone, o market vinculado a ela pode não aparecer no GET /v1/markets.\n\nSequência correta:\n  1. POST /v1/zones → cria e salva zone_id\n  2. PATCH /v1/zones/{id} active:true → ativa a zone  ← ESTE STEP\n  3. POST /v1/markets com zoneId:{{zone_id}} → cria market\n  4. PATCH /v1/markets/{id} active:true → ativa market\n  5. GET /v1/markets → market deve aparecer"
+              }
+            },
+            {
+              "name": "POST /v1/markets — Criar market NÃO-GHQ (com zoneId válido)",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                "const body = pm.response.json();",
+                "pm.collectionVariables.set('market_id', body.id);",
+                "console.log('✅ market_id criado (não-GHQ):', body.id);",
+                "console.log('Agora execute PATCH /v1/markets/{id} — Ativar market e depois GET /v1/markets para confirmar.');"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"[QA] Market Sprint 195\",\n  \"zoneId\": \"{{zone_id}}\"\n}" },
+                "url": { "raw": "{{base_url}}/v1/markets", "host": ["{{base_url}}"], "path": ["v1", "markets"] },
+                "description": "Cria um market NÃO-GHQ com um zoneId válido.\n\n⚠️ IMPORTANTE (descoberta MARTGNM-5583):\n  - zoneId: null → market tratado como GHQ/global → NÃO aparece no GET /v1/markets\n  - zoneId: UUID válido → market de zona específica → APARECE no GET /v1/markets\n\nPré-requisito: execute GET /v1/zones primeiro para preencher {{zone_id}}.\n\nPara o cenário C1 (GHQ ausente), você também precisa do market GHQ:\n  Use o market_id criado anteriormente com zoneId:null como {{ghq_market_id}}.\n  O id e4754a3a-1ebb-449d-a580-219eb65ec994 (criado com null) é o market GHQ de teste."
+              }
+            },
+            {
+              "name": "POST /v1/markets — Criar market GHQ (zoneId null) — para C1",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                "const body = pm.response.json();",
+                "pm.collectionVariables.set('ghq_market_id', body.id);",
+                "console.log('✅ ghq_market_id criado (GHQ/global, zoneId null):', body.id);",
+                "console.log('Este market NÃO deve aparecer no GET /v1/markets — use como ghq_market_id no cenário C1.');"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"[QA] GHQ Market Sprint 195\",\n  \"zoneId\": null\n}" },
+                "url": { "raw": "{{base_url}}/v1/markets", "host": ["{{base_url}}"], "path": ["v1", "markets"] },
+                "description": "Cria um market GHQ (zoneId: null = global/GHQ) e salva o id em ghq_market_id.\n\nEste market NÃO deve aparecer no GET /v1/markets após o filtro da MARTGNM-5583.\nUse o id gerado para preencher a variável ghq_market_id e testar o cenário C1."
+              }
+            },
+            {
+              "name": "PATCH /v1/markets/{id} — Ativar market",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "console.log('market ativado:', pm.collectionVariables.get('market_id'));"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"active\": true\n}" },
+                "url": { "raw": "{{base_url}}/v1/markets/{{market_id}}", "host": ["{{base_url}}"], "path": ["v1", "markets", "{{market_id}}"] },
+                "description": "Ativa o market recém-criado. Tente fazer GET /v1/markets após isso — deve aparecer na lista."
+              }
+            },
+            {
+              "name": "POST /v1/platforms — Criar platform de teste",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                "const body = pm.response.json();",
+                "pm.collectionVariables.set('platform_id', body.id);",
+                "console.log('platform_id criado:', body.id);"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"[QA] Platform Sprint 195\"\n}" },
+                "url": { "raw": "{{base_url}}/v1/platforms", "host": ["{{base_url}}"], "path": ["v1", "platforms"] },
+                "description": "Cria uma platform de teste e salva o id em platform_id."
+              }
+            },
+            {
+              "name": "PATCH /v1/platforms/{id} — Ativar platform",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "console.log('platform ativada:', pm.collectionVariables.get('platform_id'));"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"active\": true\n}" },
+                "url": { "raw": "{{base_url}}/v1/platforms/{{platform_id}}", "host": ["{{base_url}}"], "path": ["v1", "platforms", "{{platform_id}}"] },
+                "description": "Ativa a platform recém-criada."
+              }
+            },
+            {
+              "name": "POST /v1/partner-types — Criar partner type de teste",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                "const body = pm.response.json();",
+                "pm.collectionVariables.set('partner_type_id', body.id);",
+                "console.log('partner_type_id criado:', body.id);"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"[QA] Partner Type Sprint 195\"\n}" },
+                "url": { "raw": "{{base_url}}/v1/partner-types", "host": ["{{base_url}}"], "path": ["v1", "partner-types"] },
+                "description": "Cria um partner type de teste e salva o id em partner_type_id."
+              }
+            },
+            {
+              "name": "PATCH /v1/partner-types/{id} — Ativar partner type",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "console.log('partner_type ativado:', pm.collectionVariables.get('partner_type_id'));"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"active\": true\n}" },
+                "url": { "raw": "{{base_url}}/v1/partner-types/{{partner_type_id}}", "host": ["{{base_url}}"], "path": ["v1", "partner-types", "{{partner_type_id}}"] },
+                "description": "Ativa o partner type recém-criado."
+              }
+            },
+            {
+              "name": "POST /v1/partner-activation-intentions — Criar intention de teste",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                "const body = pm.response.json();",
+                "pm.collectionVariables.set('intention_id', body.id);",
+                "console.log('intention_id criado:', body.id);"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"name\": \"[QA] Activation Intention Sprint 195\"\n}" },
+                "url": { "raw": "{{base_url}}/v1/partner-activation-intentions", "host": ["{{base_url}}"], "path": ["v1", "partner-activation-intentions"] },
+                "description": "Cria uma activation intention de teste e salva o id em intention_id."
+              }
+            },
+            {
+              "name": "PATCH /v1/partner-activation-intentions/{id} — Ativar intention",
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "console.log('intention ativada:', pm.collectionVariables.get('intention_id'));"
+              ], "type": "text/javascript" }}],
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{token}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{\n  \"active\": true\n}" },
+                "url": { "raw": "{{base_url}}/v1/partner-activation-intentions/{{intention_id}}", "host": ["{{base_url}}"], "path": ["v1", "partner-activation-intentions", "{{intention_id}}"] },
+                "description": "Ativa a intention recém-criada."
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /v1/brands",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "if (body.items && body.items.length > 0) {",
+            "  pm.collectionVariables.set('brand_id', body.items[0].id);",
+            "  console.log('brand_id set to:', body.items[0].id, '-', body.items[0].name);",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/v1/brands", "host": ["{{base_url}}"], "path": ["v1", "brands"] },
+            "description": "Lista todas as brands. O test script salva o id do primeiro resultado em brand_id."
+          }
+        },
+        {
+          "name": "GET /v1/megaplatforms",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "if (body.items && body.items.length > 0) {",
+            "  pm.collectionVariables.set('megaplatform_id', body.items[0].id);",
+            "  console.log('megaplatform_id set to:', body.items[0].id, '-', body.items[0].name);",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/v1/megaplatforms", "host": ["{{base_url}}"], "path": ["v1", "megaplatforms"] }
+          }
+        },
+        {
+          "name": "GET /v1/zones — buscar zoneId válido para criar market",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "const items = body.items || body;",
+            "console.log('Zones disponíveis:', JSON.stringify(items).substring(0, 300));",
+            "if (Array.isArray(items) && items.length > 0) {",
+            "  pm.collectionVariables.set('zone_id', items[0].id);",
+            "  console.log('✅ zone_id salvo:', items[0].id, '-', items[0].name || '');",
+            "  console.log('Use esse zone_id no POST /v1/markets para criar um market NÃO-GHQ (visível no GET /v1/markets)');",
+            "} else {",
+            "  console.warn('⚠️ Nenhuma zone encontrada. Pergunte ao dev por um zoneId válido no ambiente.');",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/v1/zones", "host": ["{{base_url}}"], "path": ["v1", "zones"] },
+            "description": "Busca as zones disponíveis e salva o primeiro zone_id na variável da collection.\n\n⚠️ IMPORTANTE (MARTGNM-5583):\nO market criado com 'zoneId: null' é tratado como GHQ/global e NÃO aparece no GET /v1/markets.\nPara criar um market que apareça no GET /v1/markets, você PRECISA passar um zoneId válido.\n\nFluxo correto:\n  1. Execute este GET /v1/zones → salva zone_id\n  2. Execute POST /v1/markets com o zone_id preenchido\n  3. Execute PATCH /v1/markets/{id} com active:true\n  4. Execute GET /v1/markets → agora o market aparece na lista"
+          }
+        },
+        {
+          "name": "GET /v1/markets",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "if (body.items && body.items.length > 0) {",
+            "  pm.collectionVariables.set('market_id', body.items[0].id);",
+            "  console.log('market_id set to:', body.items[0].id, '-', body.items[0].name);",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/v1/markets", "host": ["{{base_url}}"], "path": ["v1", "markets"] }
+          }
+        },
+        {
+          "name": "GET /v1/platforms",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "if (body.items && body.items.length > 0) {",
+            "  pm.collectionVariables.set('platform_id', body.items[0].id);",
+            "  console.log('platform_id set to:', body.items[0].id, '-', body.items[0].name);",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/v1/platforms", "host": ["{{base_url}}"], "path": ["v1", "platforms"] }
+          }
+        },
+        {
+          "name": "GET /v1/partner-types",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "if (body.items && body.items.length > 0) {",
+            "  pm.collectionVariables.set('partner_type_id', body.items[0].id);",
+            "  console.log('partner_type_id set to:', body.items[0].id, '-', body.items[0].name);",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/v1/partner-types", "host": ["{{base_url}}"], "path": ["v1", "partner-types"] }
+          }
+        },
+        {
+          "name": "GET /v1/partner-activation-intentions",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "if (body.items && body.items.length > 0) {",
+            "  pm.collectionVariables.set('intention_id', body.items[0].id);",
+            "  console.log('intention_id set to:', body.items[0].id);",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/v1/partner-activation-intentions", "host": ["{{base_url}}"], "path": ["v1", "partner-activation-intentions"] }
+          }
+        },
+        {
+          "name": "GET /v1/actuator/health/liveness",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('API is healthy', () => pm.response.to.have.status(200));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/v1/actuator/health/liveness", "host": ["{{base_url}}"], "path": ["v1", "actuator", "health", "liveness"] },
+            "description": "Health check — confirma que a API está no ar antes de rodar os testes."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "MARTGNM-5249 — Campaign Creation APIs",
+      "item": [
+        {
+          "name": "C1 — POST /v1/campaigns — Create DRAFT campaign (campos obrigatórios apenas)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.test('Response has id (UUID)', () => {",
+            "  pm.expect(body).to.have.property('id');",
+            "  pm.expect(body.id).to.match(/^[0-9a-f-]{36}$/i);",
+            "});",
+            "pm.collectionVariables.set('campaign_id', body.id);",
+            "console.log('campaign_id saved:', body.id);"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DRAFT\",\n  \"name\": \"[QA] Campaign Test Sprint 195\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns", "host": ["{{base_url}}"], "path": ["v1", "campaigns"] },
+            "description": "[C1] Cria campanha DRAFT com apenas os campos obrigatórios (status + name). Salva campaign_id automaticamente.\n\nConforme Swagger: apenas 'status' e 'name' são required. Os campos brandId, megaplatformId, marketIds e platformIds são opcionais — se informados, precisam ser UUIDs válidos (rode os Reference Data requests primeiro para preencher as variáveis)."
+          }
+        },
+        {
+          "name": "C1b — POST /v1/campaigns — Create DRAFT campaign (todos os campos, requer Reference Data)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.test('Response has id (UUID)', () => {",
+            "  pm.expect(body).to.have.property('id');",
+            "  pm.expect(body.id).to.match(/^[0-9a-f-]{36}$/i);",
+            "});",
+            "pm.collectionVariables.set('campaign_id', body.id);",
+            "console.log('campaign_id (full) saved:', body.id);"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DRAFT\",\n  \"name\": \"[QA] Campaign Test Sprint 195 (Full)\",\n  \"brandId\": \"{{brand_id}}\",\n  \"megaplatformId\": \"{{megaplatform_id}}\",\n  \"marketIds\": [\"{{market_id}}\"],\n  \"platformIds\": [\"{{platform_id}}\"],\n  \"keywords\": [\"qa\", \"sprint195\"],\n  \"dtStart\": \"2026-07-01T00:00:00Z\",\n  \"dtEnd\": \"2026-12-31T00:00:00Z\",\n  \"objective\": \"Brand awareness QA test\",\n  \"budget\": \"10000.00\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns", "host": ["{{base_url}}"], "path": ["v1", "campaigns"] },
+            "description": "[C1b] Cria campanha DRAFT com todos os campos opcionais. ATENÇÃO: rode todos os requests da pasta '🔧 Reference Data' primeiro para preencher brand_id, megaplatform_id, market_id e platform_id. Se as variáveis estiverem vazias, retorna 400 'must be a UUID'."
+          }
+        },
+        {
+          "name": "C2 — POST /v1/campaigns — Create DRAFT campaign with partners (Step 1+2)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.test('Response has id', () => pm.expect(body).to.have.property('id'));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DRAFT\",\n  \"name\": \"[QA] Campaign With Partners\",\n  \"brandId\": \"{{brand_id}}\",\n  \"megaplatformId\": \"{{megaplatform_id}}\",\n  \"marketIds\": [\"{{market_id}}\"],\n  \"platformIds\": [\"{{platform_id}}\"],\n  \"keywords\": [\"qa\", \"partners\"],\n  \"dtStart\": \"2026-07-01T00:00:00Z\",\n  \"dtEnd\": \"2026-12-31T00:00:00Z\",\n  \"objective\": \"QA test with partners\",\n  \"budget\": \"20000.00\",\n  \"partners\": [\n    {\n      \"partnerId\": \"{{partner_id}}\",\n      \"partnerTypeId\": \"{{partner_type_id}}\",\n      \"contractType\": \"PAID\",\n      \"activationIntentionIds\": [\"{{intention_id}}\"]\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns", "host": ["{{base_url}}"], "path": ["v1", "campaigns"] },
+            "description": "[C2] Cria campanha incluindo partners no mesmo POST. partnerId = partner_id salvo pelo GET /partners/search."
+          }
+        },
+        {
+          "name": "C3 — PATCH /v1/campaigns/{id} — Update draft campaign fields",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Response has id', () => pm.expect(body).to.have.property('id'));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"[QA] Campaign Updated\",\n  \"budget\": \"15000.00\",\n  \"keywords\": [\"qa\", \"updated\"]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}", "host": ["{{base_url}}"], "path": ["v1", "campaigns", "{{campaign_id}}"] },
+            "description": "[C3] Atualiza campos simples da campanha. keywords é full-replace (substitui todos)."
+          }
+        },
+        {
+          "name": "C4 — POST /v1/campaigns — 422 VALIDATION_FAILED (UNDER_REVIEW, fields missing)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 422', () => pm.response.to.have.status(422));",
+            "const body = pm.response.json();",
+            "pm.test('Has validation errors', () => pm.expect(body).to.exist);"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"UNDER_REVIEW\"\n}" },
+            "url": { "raw": "{{base_url}}/v1/campaigns", "host": ["{{base_url}}"], "path": ["v1", "campaigns"] },
+            "description": "[C4] UNDER_REVIEW com body mínimo. Espera 422 VALIDATION_FAILED com mensagens por campo."
+          }
+        },
+        {
+          "name": "C5a — POST /v1/campaigns — DRAFT accepts partial data (201)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('DRAFT accepts partial — Status 201', () => pm.response.to.have.status(201));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DRAFT\",\n  \"name\": \"[QA] Partial Draft\",\n  \"brandId\": \"{{brand_id}}\",\n  \"megaplatformId\": \"{{megaplatform_id}}\",\n  \"marketIds\": [\"{{market_id}}\"]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns", "host": ["{{base_url}}"], "path": ["v1", "campaigns"] },
+            "description": "[C5a] DRAFT com campos opcionais omitidos deve retornar 201."
+          }
+        },
+        {
+          "name": "C6 — POST /v1/campaigns — Response in camelCase",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.test('All keys are camelCase', () => {",
+            "  Object.keys(body).forEach(k => {",
+            "    pm.expect(k, `Key '${k}' is not camelCase`).to.match(/^[a-z][a-zA-Z0-9]*$/);",
+            "  });",
+            "});"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DRAFT\",\n  \"name\": \"[QA] camelCase Contract Test\",\n  \"brandId\": \"{{brand_id}}\",\n  \"megaplatformId\": \"{{megaplatform_id}}\",\n  \"marketIds\": [\"{{market_id}}\"],\n  \"dtStart\": \"2026-07-01T00:00:00Z\",\n  \"dtEnd\": \"2026-12-31T00:00:00Z\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns", "host": ["{{base_url}}"], "path": ["v1", "campaigns"] },
+            "description": "[C6] Valida automaticamente que todos os keys do response são camelCase."
+          }
+        },
+        {
+          "name": "C7 — POST /v1/campaigns — 401 Unauthorized (no token)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 401', () => pm.response.to.have.status(401));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DRAFT\",\n  \"name\": \"[QA] Unauthorized Test\",\n  \"brandId\": \"{{brand_id}}\",\n  \"megaplatformId\": \"{{megaplatform_id}}\",\n  \"marketIds\": [\"{{market_id}}\"]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns", "host": ["{{base_url}}"], "path": ["v1", "campaigns"] },
+            "description": "[C7] Sem Authorization header. Espera 401."
+          }
+        },
+        {
+          "name": "C8 — PATCH /v1/campaigns/{id} — Add partner to campaign (op: add)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Response has id', () => pm.expect(body).to.have.property('id'));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partners\": [\n    {\n      \"op\": \"add\",\n      \"value\": {\n        \"partnerId\": \"{{partner_id}}\",\n        \"partnerTypeId\": \"{{partner_type_id}}\",\n        \"contractType\": \"PAID\",\n        \"activationIntentionIds\": [\"{{intention_id}}\"]\n      }\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}", "host": ["{{base_url}}"], "path": ["v1", "campaigns", "{{campaign_id}}"] },
+            "description": "[C8] Adiciona partner à campanha via PATCH com op: 'add'. Requer campaign_id (salvo pelo C1) e partner_id (salvo pelo GET /partners/search da pasta MARTGNM-5254)."
+          }
+        },
+        {
+          "name": "C9 — PATCH /v1/campaigns/{id} — Replace partner details (op: replace)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partners\": [\n    {\n      \"op\": \"replace\",\n      \"value\": {\n        \"partnerId\": \"{{partner_id}}\",\n        \"contractType\": \"UNPAID\",\n        \"activationIntentionIds\": [\"{{intention_id}}\"]\n      }\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}", "host": ["{{base_url}}"], "path": ["v1", "campaigns", "{{campaign_id}}"] },
+            "description": "[C9] Atualiza detalhes de um partner já adicionado usando op: 'replace'."
+          }
+        },
+        {
+          "name": "C10 — PATCH /v1/campaigns/{id} — Remove partner (op: remove) — DRAFT only",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partners\": [\n    {\n      \"op\": \"remove\",\n      \"value\": {\n        \"partnerId\": \"{{partner_id}}\"\n      }\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}", "host": ["{{base_url}}"], "path": ["v1", "campaigns", "{{campaign_id}}"] },
+            "description": "[C10] Remove partner da campanha usando op: 'remove'. Só permitido em DRAFT — se campanha estiver em outro status deve retornar 422."
+          }
+        },
+        {
+          "name": "C11 — PATCH /v1/campaigns/{id} — 422 remove partner on non-DRAFT",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 422 (remove only in DRAFT)', () => pm.response.to.have.status(422));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partners\": [\n    {\n      \"op\": \"remove\",\n      \"value\": {\n        \"partnerId\": \"{{partner_id}}\"\n      }\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns/CAMPAIGN_ID_UNDER_REVIEW_HERE", "host": ["{{base_url}}"], "path": ["v1", "campaigns", "CAMPAIGN_ID_UNDER_REVIEW_HERE"] },
+            "description": "[C11] Tenta remover partner em campanha UNDER_REVIEW. Substitua o ID pelo de uma campanha não-DRAFT. Espera 422."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "MARTGNM-5254 — Add Partners API",
+      "description": "Cenários alinhados com o XML atualizado (2026-06-01).\n\nEndpoints reais conforme Swagger:\n- GET /v1/partners/search?search= (NÃO existe /influencers/search)\n- PATCH /v1/campaigns/{id} com op: add / replace / remove (NÃO existem POST/PATCH/DELETE /campaigns/:id/influencers)\n\nC1-C2: busca de partners\nC3-C6: gerenciamento de partners via PATCH\nC7: paginação da busca",
+      "item": [
+        {
+          "name": "C1 — GET /v1/partners/search — Returns results for valid query",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Has items array', () => pm.expect(body).to.have.property('items'));",
+            "if (body.items && body.items.length > 0) {",
+            "  pm.collectionVariables.set('partner_id', body.items[0].id);",
+            "  console.log('partner_id saved:', body.items[0].id, '-', body.items[0].name);",
+            "  pm.test('First item has id and name', () => {",
+            "    pm.expect(body.items[0]).to.have.all.keys(['id', 'name']);",
+            "  });",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/partners/search?search=test&page=1&pageSize=20",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "partners", "search"],
+              "query": [
+                { "key": "search", "value": "test", "description": "Partial match no nome do partner (obrigatório)" },
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            },
+            "description": "[C1 — XML C1] Busca partners por nome parcial. Salva o primeiro id como partner_id.\nEndpoint correto: GET /v1/partners/search?search= (não /influencers/search?q=)"
+          }
+        },
+        {
+          "name": "C2 — GET /v1/partners/search — Short query (1 char) returns 400",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 400', () => pm.response.to.have.status(400));",
+            "const body = pm.response.json();",
+            "pm.test('Body has message about minimum characters', () => {",
+            "  pm.expect(body).to.have.property('message');",
+            "});",
+            "console.log('Response status:', pm.response.code, '| message:', pm.response.json().message);"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/partners/search?search=a",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "partners", "search"],
+              "query": [{ "key": "search", "value": "a", "description": "1 char — mínimo não atingido" }]
+            },
+            "description": "[C2 — XML C2] Busca com 1 caractere. Conforme XML: deve retornar HTTP 400 com mensagem indicando o mínimo de caracteres."
+          }
+        },
+        {
+          "name": "C3 — PATCH /v1/campaigns/{id} — Add partner to campaign (op: add)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Response has id', () => pm.expect(body).to.have.property('id'));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partners\": [\n    {\n      \"op\": \"add\",\n      \"value\": {\n        \"partnerId\": \"{{partner_id}}\",\n        \"partnerTypeId\": \"{{partner_type_id}}\",\n        \"contractType\": \"PAID\",\n        \"activationIntentionIds\": [\"{{intention_id}}\"]\n      }\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}", "host": ["{{base_url}}"], "path": ["v1", "campaigns", "{{campaign_id}}"] },
+            "description": "[C3 — XML C3] Adiciona partner à campanha via PATCH op:add. Requer campaign_id (C1 do MARTGNM-5249) e partner_id (C1 desta pasta).\nNão existe POST /campaigns/:id/influencers no Swagger."
+          }
+        },
+        {
+          "name": "C4 — PATCH /v1/campaigns/{id} — Replace partner details (op: replace)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Response has id', () => pm.expect(body).to.have.property('id'));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partners\": [\n    {\n      \"op\": \"replace\",\n      \"value\": {\n        \"partnerId\": \"{{partner_id}}\",\n        \"contractType\": \"UNPAID\",\n        \"activationIntentionIds\": [\"{{intention_id}}\"]\n      }\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}", "host": ["{{base_url}}"], "path": ["v1", "campaigns", "{{campaign_id}}"] },
+            "description": "[C4 — XML C4] Atualiza detalhes de um partner já adicionado via PATCH op:replace. Rodar após C3.\nNão existe PATCH /campaigns/:id/influencers/:partnerId no Swagger."
+          }
+        },
+        {
+          "name": "C5 — PATCH /v1/campaigns/{id} — Remove partner (op: remove) — DRAFT only → 200",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Response has id', () => pm.expect(body).to.have.property('id'));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partners\": [\n    {\n      \"op\": \"remove\",\n      \"value\": {\n        \"partnerId\": \"{{partner_id}}\"\n      }\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}", "host": ["{{base_url}}"], "path": ["v1", "campaigns", "{{campaign_id}}"] },
+            "description": "[C5 — XML C5] Remove partner da campanha via PATCH op:remove. Só funciona em DRAFT → 200.\nNo XML original esperava HTTP 204 (DELETE), mas o endpoint correto retorna 200 (PATCH).\nNão existe DELETE /campaigns/:id/influencers/:partnerId no Swagger."
+          }
+        },
+        {
+          "name": "C6 — PATCH /v1/campaigns/{id} — op:add on non-DRAFT campaign → 422",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 422 (not allowed in non-DRAFT)', () => pm.response.to.have.status(422));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partners\": [\n    {\n      \"op\": \"add\",\n      \"value\": {\n        \"partnerId\": \"{{partner_id}}\",\n        \"partnerTypeId\": \"{{partner_type_id}}\",\n        \"contractType\": \"PAID\",\n        \"activationIntentionIds\": [\"{{intention_id}}\"]\n      }\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/v1/campaigns/CAMPAIGN_ID_UNDER_REVIEW_HERE", "host": ["{{base_url}}"], "path": ["v1", "campaigns", "CAMPAIGN_ID_UNDER_REVIEW_HERE"] },
+            "description": "[C6 — XML C6] Tenta adicionar partner em campanha não-DRAFT (ex: UNDER_REVIEW). Substitua o ID no path por uma campanha nesse estado. Espera 422."
+          }
+        },
+        {
+          "name": "C7 — GET /v1/partners/search — Pagination with page=1&pageSize=5",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Has pagination fields', () => {",
+            "  ['items','page','pageSize','total'].forEach(f => pm.expect(body, `Missing: ${f}`).to.have.property(f));",
+            "});",
+            "pm.test('Returns at most 5 items', () => pm.expect(body.items.length).to.be.at.most(5));",
+            "pm.test('pageSize is 5', () => pm.expect(body.pageSize).to.equal(5));",
+            "pm.test('page is 1', () => pm.expect(body.page).to.equal(1));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/partners/search?search=a&page=1&pageSize=5",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "partners", "search"],
+              "query": [
+                { "key": "search", "value": "a", "description": "Termo de busca" },
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "5" }
+              ]
+            },
+            "description": "[C7 — XML C7] Valida paginação: page=1, pageSize=5. Confirma campos items, page, pageSize, total no response e que retorna no máximo 5 itens."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "MARTGNM-5256 — Campaign Review & Submit API (Step 3)",
+      "description": "Endpoints: GET /v1/campaigns/{id}/overview e GET /v1/campaigns/{id}/overview/partners.\n\n⚠️ ATENÇÃO: Esses endpoints NÃO aparecem no Swagger atual (martech-connect-influencer-service). Podem estar em outro serviço ou ainda não estão documentados. Confirme a base_url correta com o dev responsável.\n\nContrato do response (GET /overview):\n{ id, status, name, brand:{id,name}, megaplatform:{id,name}, markets:[{id,name}], platforms:[{id,name}], keywords:[], dtStart, dtEnd, objective, promotionalPartnerCampaignRole, budget }\n\nContrato do response (GET /overview/partners):\n{ items:[{id, partner, partnerType, contractType, activationIntentions, status}], page, pageSize, total }",
+      "item": [
+        {
+          "name": "C1 — GET /v1/campaigns/{id}/overview — Returns full campaign payload (no partners)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Has required top-level fields', () => {",
+            "  ['id','status','name','brand','megaplatform','markets','platforms','keywords','dtStart','dtEnd'].forEach(f => {",
+            "    pm.expect(body, `Missing field: ${f}`).to.have.property(f);",
+            "  });",
+            "});",
+            "pm.test('brand has id and name', () => {",
+            "  pm.expect(body.brand).to.have.all.keys(['id','name']);",
+            "});",
+            "pm.test('megaplatform has id and name', () => {",
+            "  pm.expect(body.megaplatform).to.have.all.keys(['id','name']);",
+            "});",
+            "pm.test('markets is array with id+name', () => {",
+            "  pm.expect(body.markets).to.be.an('array');",
+            "  if (body.markets.length > 0) pm.expect(body.markets[0]).to.have.all.keys(['id','name']);",
+            "});",
+            "pm.test('Response does NOT include partners array', () => {",
+            "  pm.expect(body).to.not.have.property('partners');",
+            "});",
+            "pm.test('All top-level keys are camelCase', () => {",
+            "  Object.keys(body).forEach(k => pm.expect(k).to.match(/^[a-z][a-zA-Z0-9]*$/));",
+            "});"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}/overview",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns", "{{campaign_id}}", "overview"]
+            },
+            "description": "[C1] Overview da campanha sem partners. Valida contrato completo: campos obrigatórios, objetos aninhados (brand, megaplatform, markets), ausência de partners, e camelCase."
+          }
+        },
+        {
+          "name": "C2 — GET /v1/campaigns/{id}/overview/partners — Returns paginated partners list",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Response has pagination envelope (items, page, pageSize, total)', () => {",
+            "  ['items','page','pageSize','total'].forEach(f => {",
+            "    pm.expect(body, `Missing: ${f}`).to.have.property(f);",
+            "  });",
+            "});",
+            "pm.test('items is an array', () => pm.expect(body.items).to.be.an('array'));",
+            "pm.test('total is a number', () => pm.expect(body.total).to.be.a('number'));",
+            "if (body.items.length > 0) {",
+            "  pm.test('Each partner item has required fields', () => {",
+            "    ['id','partner','partnerType','contractType','activationIntentions','status'].forEach(f => {",
+            "      pm.expect(body.items[0], `Item missing: ${f}`).to.have.property(f);",
+            "    });",
+            "  });",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}/overview/partners",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns", "{{campaign_id}}", "overview", "partners"]
+            },
+            "description": "[C2] Lista partners da campanha. Valida envelope de paginação (items, page, pageSize, total) e campos por item. pageSize default = 40 conforme arquitetura."
+          }
+        },
+        {
+          "name": "C3a — GET /v1/campaigns/{id}/overview/partners — page=1&pageSize=5",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Returns max 5 items', () => pm.expect(body.items.length).to.be.at.most(5));",
+            "pm.test('pageSize is 5', () => pm.expect(body.pageSize).to.equal(5));",
+            "pm.test('page is 1', () => pm.expect(body.page).to.equal(1));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}/overview/partners?page=1&pageSize=5",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns", "{{campaign_id}}", "overview", "partners"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "5" }
+              ]
+            },
+            "description": "[C3a] Paginação controlada: page=1, pageSize=5. Valida que retorna no máximo 5 itens."
+          }
+        },
+        {
+          "name": "C3b — GET /v1/campaigns/{id}/overview/partners — page=2&pageSize=5",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('Returns max 5 items on page 2', () => pm.expect(body.items.length).to.be.at.most(5));",
+            "pm.test('page is 2', () => pm.expect(body.page).to.equal(2));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}/overview/partners?page=2&pageSize=5",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns", "{{campaign_id}}", "overview", "partners"],
+              "query": [
+                { "key": "page", "value": "2" },
+                { "key": "pageSize", "value": "5" }
+              ]
+            },
+            "description": "[C3b] Página 2 — valida que retorna itens diferentes da página 1 e que page=2 está refletido no response."
+          }
+        },
+        {
+          "name": "C4 — GET /v1/campaigns/{id}/overview — 404 for non-existent campaign",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 404', () => pm.response.to.have.status(404));",
+            "const body = pm.response.json();",
+            "pm.test('Has error message', () => pm.expect(body).to.exist);"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns/00000000-0000-0000-0000-000000000000/overview",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns", "00000000-0000-0000-0000-000000000000", "overview"]
+            },
+            "description": "[C4] UUID inexistente (zeros). Espera 404 com mensagem de erro."
+          }
+        },
+        {
+          "name": "C5 — GET /v1/campaigns/{id}/overview — camelCase + nested objects contract",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('All top-level keys are camelCase', () => {",
+            "  Object.keys(body).forEach(k => pm.expect(k, `'${k}' not camelCase`).to.match(/^[a-z][a-zA-Z0-9]*$/));",
+            "});",
+            "pm.test('brand contains id and name', () => {",
+            "  pm.expect(body.brand).to.include.all.keys(['id','name']);",
+            "});",
+            "pm.test('megaplatform contains id and name', () => {",
+            "  pm.expect(body.megaplatform).to.include.all.keys(['id','name']);",
+            "});",
+            "pm.test('markets is array of {id, name}', () => {",
+            "  pm.expect(body.markets).to.be.an('array');",
+            "  if (body.markets.length > 0) pm.expect(body.markets[0]).to.include.all.keys(['id','name']);",
+            "});"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}/overview",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns", "{{campaign_id}}", "overview"]
+            },
+            "description": "[C5] Valida camelCase e objetos aninhados (brand, megaplatform, markets) com id+name. Cobre o contrato da arquitetura."
+          }
+        },
+        {
+          "name": "C6 — GET /v1/campaigns/{id}/overview/partners — Empty list when no partners",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200 (not error)', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "pm.test('items is empty array', () => {",
+            "  pm.expect(body.items).to.be.an('array').that.is.empty;",
+            "});",
+            "pm.test('total is 0', () => pm.expect(body.total).to.equal(0));"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns/CAMPAIGN_ID_NO_PARTNERS_HERE/overview/partners",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns", "CAMPAIGN_ID_NO_PARTNERS_HERE", "overview", "partners"]
+            },
+            "description": "[C6] Substitua CAMPAIGN_ID_NO_PARTNERS_HERE pelo ID de uma campanha sem partners. Espera 200 com items:[] e total:0."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "MARTGNM-5583 — Update eligible markets [BACK]",
+      "description": "Testes para a história MARTGNM-5583: Update eligible markets.\n\n⚠️ DADOS MOCKADOS: O ambiente atual não possui conexão com CIQ e os dados são mockados. Os cenários C3, C4 e C5 dependem de:\n  - ghq_market_id: ID do market GHQ (country com zone_id set). Preencher na variável da collection após confirmar com o dev.\n  - market_id: ID de um market válido (não-GHQ). Já disponível na variável da collection.\n\nEndpoints cobertos:\n  - GET /v1/markets (C1, C2)\n  - POST /v1/campaigns (C3, C5)\n  - PATCH /v1/campaigns/:id — status DRAFT (C4)",
+      "item": [
+        {
+          "name": "C1 — GET /v1/markets — GHQ market is absent from response",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "const items = body.items || body;",
+            "",
+            "// ❌ FIXED: empty array is NOT acceptable — endpoint must return eligible markets",
+            "pm.test('Response is a non-empty array of markets', () => {",
+            "  pm.expect(items, 'items must be an array').to.be.an('array');",
+            "  pm.expect(items.length, 'items must not be empty — no eligible markets found. Possible causes: (1) all markets are GHQ, (2) no active non-GHQ market in environment, (3) filter bug in MARTGNM-5583').to.be.greaterThan(0);",
+            "});",
+            "",
+            "// ❌ FIXED: fail if ghq_market_id is not configured — skip guard removed",
+            "pm.test('No GHQ market in response (zone_id must be absent per story rule)', () => {",
+            "  const ghqId = pm.collectionVariables.get('ghq_market_id');",
+            "  if (!ghqId || ghqId === 'PREENCHER_COM_ID_GHQ') {",
+            "    pm.expect.fail('BLOCKER: ghq_market_id variable is not set. Fill it with the GHQ market UUID to run this assertion. Ask dev for the GHQ market ID in this environment.');",
+            "  }",
+            "  const found = items.find(m => m.id === ghqId);",
+            "  pm.expect(found, 'GHQ market MUST NOT be in the list — story rule: exclude markets whose country has zone_id set').to.be.undefined;",
+            "});",
+            "",
+            "// ❌ FIXED: removed if(length > 0) guard — must iterate or fail",
+            "pm.test('Each market has at least id and name', () => {",
+            "  pm.expect(items.length, 'Cannot validate structure — list is empty').to.be.greaterThan(0);",
+            "  items.forEach(m => {",
+            "    pm.expect(m, `item missing 'id': ${JSON.stringify(m)}`).to.have.property('id');",
+            "    pm.expect(m, `item missing 'name': ${JSON.stringify(m)}`).to.have.property('name');",
+            "  });",
+            "});"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/markets",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "markets"]
+            },
+            "description": "[C1] GET /v1/markets deve retornar 200 excluindo o market GHQ (regra: country com zone_id set). Verifique manualmente na resposta que nenhum item possui zone_id preenchido."
+          }
+        },
+        {
+          "name": "C2 — GET /v1/markets — Response contains only id and name per item",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "const items = body.items || body;",
+            "console.log('Total markets retornados:', items.length);",
+            "",
+            "// ❌ FIXED: must have items to validate structure",
+            "pm.test('Response is a non-empty array', () => {",
+            "  pm.expect(items).to.be.an('array');",
+            "  pm.expect(items.length, 'List is empty — cannot validate item structure. Ensure a non-GHQ active market exists in the environment.').to.be.greaterThan(0);",
+            "});",
+            "",
+            "// ❌ FIXED: removed if(length > 0) guard",
+            "pm.test('Each item contains id and name (simplified contract per story spec)', () => {",
+            "  pm.expect(items.length, 'Cannot validate — empty list').to.be.greaterThan(0);",
+            "  items.forEach(m => {",
+            "    pm.expect(m, `item missing 'id'`).to.have.property('id');",
+            "    pm.expect(m, `item missing 'name'`).to.have.property('name');",
+            "  });",
+            "});",
+            "",
+            "if (items.length > 0) {",
+            "  pm.collectionVariables.set('market_id', items[0].id);",
+            "  console.log('market_id salvo:', items[0].id);",
+            "} else {",
+            "  console.error('❌ market_id NOT saved — list is empty. Fill ghq_market_id and ensure a valid non-GHQ market exists.');",
+            "}"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/markets",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "markets"]
+            },
+            "description": "[C2] Verifica que cada item da resposta contém apenas id e name (campos simplificados conforme spec da história). O primeiro market_id é salvo automaticamente na variável."
+          }
+        },
+        {
+          "name": "C3 — POST /v1/campaigns — GHQ id in marketIds is stripped silently (201)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.test('Campaign created with id', () => {",
+            "  pm.expect(body.id).to.be.a('string');",
+            "  pm.collectionVariables.set('campaign_id_ghq_test', body.id);",
+            "  console.log('campaign_id_ghq_test:', body.id);",
+            "});",
+            "const ghqId = pm.collectionVariables.get('ghq_market_id');",
+            "pm.test('GHQ market id NOT in persisted campaign', () => {",
+            "  const marketIds = (body.marketIds || body.markets || []).map(m => m.id || m);",
+            "  if (ghqId && ghqId !== 'PREENCHER_COM_ID_GHQ') {",
+            "    pm.expect(marketIds, 'GHQ id should have been stripped').to.not.include(ghqId);",
+            "  } else {",
+            "    console.warn('ghq_market_id não configurado — valide manualmente na resposta');",
+            "  }",
+            "});"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DRAFT\",\n  \"name\": \"[QA] Campaign GHQ Market Test\",\n  \"marketIds\": [\"{{ghq_market_id}}\", \"{{market_id}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns"]
+            },
+            "description": "[C3] POST com GHQ id + market válido em marketIds. O backend deve remover o GHQ silenciosamente e criar a campanha com HTTP 201. Apenas o market válido deve estar no response.\n\n⚠️ Preencha ghq_market_id na variável da collection antes de executar."
+          }
+        },
+        {
+          "name": "C4 — PATCH /v1/campaigns/:id (DRAFT) — GHQ id in marketIds is stripped, no 422",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200 (not 422)', () => pm.response.to.have.status(200));",
+            "const body = pm.response.json();",
+            "const ghqId = pm.collectionVariables.get('ghq_market_id');",
+            "pm.test('GHQ market id NOT in updated campaign', () => {",
+            "  const marketIds = (body.marketIds || body.markets || []).map(m => m.id || m);",
+            "  if (ghqId && ghqId !== 'PREENCHER_COM_ID_GHQ') {",
+            "    pm.expect(marketIds, 'GHQ id should have been stripped').to.not.include(ghqId);",
+            "  } else {",
+            "    console.warn('ghq_market_id não configurado — valide manualmente na resposta');",
+            "  }",
+            "});",
+            "pm.test('Valid market id IS in updated campaign', () => {",
+            "  const validId = pm.collectionVariables.get('market_id');",
+            "  const marketIds = (body.marketIds || body.markets || []).map(m => m.id || m);",
+            "  if (validId) pm.expect(marketIds).to.include(validId);",
+            "});"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"marketIds\": [\"{{ghq_market_id}}\", \"{{market_id}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns/{{campaign_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns", "{{campaign_id}}"]
+            },
+            "description": "[C4] PATCH em campanha DRAFT com GHQ id no marketIds. Esperado: HTTP 200, sem 422, GHQ removido silenciosamente, market válido persistido.\n\n⚠️ Preencha ghq_market_id na variável da collection. campaign_id deve ser uma campanha em status DRAFT."
+          }
+        },
+        {
+          "name": "C5 — POST /v1/campaigns — Valid non-GHQ marketIds keeps current behavior (201)",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 201', () => pm.response.to.have.status(201));",
+            "const body = pm.response.json();",
+            "pm.test('Campaign created successfully', () => pm.expect(body.id).to.be.a('string'));",
+            "const validId = pm.collectionVariables.get('market_id');",
+            "pm.test('All provided valid marketIds are in the response (no market removed)', () => {",
+            "  const marketIds = (body.marketIds || body.markets || []).map(m => m.id || m);",
+            "  if (validId) pm.expect(marketIds, 'Valid market_id should be persisted').to.include(validId);",
+            "});",
+            "console.log('Regressão OK — campanha criada sem remoção indevida de market:', body.id);"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DRAFT\",\n  \"name\": \"[QA] Campaign Valid Markets Regression\",\n  \"marketIds\": [\"{{market_id}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/campaigns",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "campaigns"]
+            },
+            "description": "[C5] Regressão: POST com apenas market válido (não-GHQ) em marketIds. Nenhum market deve ser removido. Comportamento atual deve ser mantido."
+          }
+        }
+      ]
+    }
+  ]
+}

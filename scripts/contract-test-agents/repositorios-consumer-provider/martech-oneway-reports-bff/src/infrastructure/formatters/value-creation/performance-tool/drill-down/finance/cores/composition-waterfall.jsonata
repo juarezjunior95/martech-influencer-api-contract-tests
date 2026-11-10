@@ -1,0 +1,97 @@
+(
+  $large := $exists(datasources.composition) ? datasources.composition : [];
+  $isEmpty := $count($large) = 0;
+  $config := {
+    "variation": { "unit_measure_percent": "%" }
+  };
+  /* -------------------------
+ * Helpers
+ * ------------------------- */
+  $formatValue := function($v) { $type($v) = "number" ? $formatNumber($v, "#,##0.0") : "-" };
+  $formatTwoDecimals := function($v) { $type($v) = "number" ? $formatNumber($v, "0.00") : "0" };
+  $trend := function($dir) { $dir = "up" ? "positive" : "negative" };
+  $reverseTrendSteps := ["vic", "vlc", "vilc", "sales", "marketing"];
+  $shouldUseReverseTrend := function($stepName) {
+    $count($reverseTrendSteps[$ = $lowercase($stepName)]) > 0
+  };
+  $resolveComparisonTrend := function($stepName, $value, $defaultDirection) {
+    $shouldUseReverseTrend($stepName)
+      ? $trend($type($value) = "number" and $value < 0 ? "up" : "down")
+      : $trend($defaultDirection)
+  };
+  /* -------------------------
+ * Builder
+ * ------------------------- */
+  $build := function($data) {
+    (
+      $hasValidData := $count($data) > 0 and $exists($data.ac[$type($) = "number" and $ != 0][0]);
+      $hasValidData = false
+        ? {}
+        : (
+          $values := $data.($exists(ac) and $type(ac) = "number" ? ac : 0);
+          $formattedValues := $map($values, function($v) { $formatFinanceValue($v) });
+          $labels := $map($data, function($d) { $exists($d.step_name) ? $d.step_name : "" });
+          $labelsData := $map($data, function($item, $index) {
+            {
+              "label": $exists($item.step_name) ? $item.step_name : "",
+              "index": $index,
+              "first": $index = 0,
+              "retained": $item.step_name = "MACO"
+            }
+          });
+          $chartData := $values;
+          $retainedIndex := $labelsData[retained = true].index;
+          $specialIndexes := {
+            "first": $labelsData[first = true].index,
+            "last": $count($chartData) - 1,
+            "retained": $exists($retainedIndex) ? $retainedIndex : -1
+          };
+          $comparison := $map(
+            $data,
+            function($d) {
+              {
+                "vs_ly": {
+                  "value": $formatValue($d.ac_vs_ly),
+                  "measure": $exists($d.comp_unit_of_measure) ? $d.comp_unit_of_measure : $config.variation.unit_measure_percent,
+                  "trend": $resolveComparisonTrend($d.step_name, $d.ac_vs_ly, $d.variationDirectionVsLy)
+                },
+                "hl": {
+                  "value": $formatValue($d.per_hl),
+                  "measure": "",
+                  "trend": ""
+                },
+                "hl_vs_ly": {
+                  "value": $formatValue($d.per_hl_vs_ly),
+                  "measure": $exists($d.comp_unit_of_measure) ? $d.comp_unit_of_measure : $config.variation.unit_measure_percent,
+                  "trend": $resolveComparisonTrend($d.step_name, $d.per_hl_vs_ly, $d.variationDirectionPerHlVsLy)
+                }
+              }
+            }
+          );
+          $comparisonLine := [
+            { "title": "vs LY", "data": $comparison.vs_ly },
+            { "title": "/hl", "data": $comparison.hl },
+            { "title": "/hl vs LY", "data": $comparison.hl_vs_ly }
+          ];
+          $comparisonLineWithArrays := $map(
+            $comparisonLine,
+            function($item) { { "title": $item.title, "data": $type($item.data) = "array" ? $item.data : [$item.data] } }
+          );
+          {
+            "values": $type($values) = "array" ? $values : [$values],
+            "labels": $type($labels) = "array" ? $labels : [$labels],
+            "formattedData": [[$formattedValues]],
+            "specialIndexes": $specialIndexes,
+            "comparisonLine": { "data": $comparisonLineWithArrays }
+          }
+        )
+    )
+  };
+  $isEmpty
+    ? { "empty": true }
+    : (
+      $largeResult := $build($large);
+      $hasLargeData := $count($keys($largeResult)) > 0;
+      $hasLargeData  ? $largeResult : { "empty": true }
+    )
+)

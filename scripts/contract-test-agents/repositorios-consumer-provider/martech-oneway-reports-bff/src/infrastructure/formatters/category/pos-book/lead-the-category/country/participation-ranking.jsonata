@@ -1,0 +1,76 @@
+/**
+ * 🔢 PARTICIPATION RANKING FORMATTER
+ * 🎯 Component: Bar Chart Ranking
+ * 📍 Used on: Category > POS Book > Lead the Category > Country > Participation Ranking
+ * 🔄 Input: category_pos-book_lead-the-category_country_participation-ranking data
+ * 📤 Output: Ranking bar chart with datasets, labels, and variation captions
+ * 🔧 Sub-filters: cohort, price_segment
+ */
+
+(
+  $dsKey := $keys(datasources)[0];
+  $data := $lookup(datasources, $dsKey);
+
+  $formatBrandName := function($brand) {
+    $brand ? $join(
+      $map($split($lowercase($brand), " "), function($word) {
+        $uppercase($substring($word, 0, 1)) & $substring($word, 1)
+      }),
+      " "
+    ) : ""
+  };
+
+  $buildDatasets := function() {
+    [
+      {
+        "data": $data.($formatValue(ac))
+      },
+      {
+        "unitMeasure": $map($data, function($item) { "%" })
+      },
+      {
+        "source": [$data.abi_comp]
+      }
+    ]
+  };
+
+  $buildLabels := function() {
+    $map($data, function($item) {
+      [
+        $formatBrandName($item.raw_brand)
+      ]
+    })
+  };
+
+  $buildVariationCaption := function() {
+    {
+      "title": "Comparison",
+      "subtitle": "Vs LY",
+      "variationsRows": {
+        "kpi": {
+          "data": $map($data, function($item) {
+            (
+              $formattedVsLy := $formatValue($item.ac_vs_ly);
+              {
+                "variationsGroup": [
+                  {
+                    "variation": $formattedVsLy,
+                    "direction": $item.variationDirectionVsLy,
+                    "unit_of_measure": $formattedVsLy != "-" ? $item.comp_unit_of_measure : ""
+                  }
+                ]
+              }
+            )
+          })
+        }
+      }
+    }
+  };
+  $count($data) = 0 ? {
+    "empty": true
+  } : {
+    "datasets": $buildDatasets(),
+    "labels": $buildLabels(),
+    "variation_caption": $buildVariationCaption()
+  }
+)

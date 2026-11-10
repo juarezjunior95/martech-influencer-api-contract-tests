@@ -1,0 +1,22 @@
+steps:
+  # IMPORTANT: file-pattern segments in `key` must NOT be wrapped in quotes —
+  # quoted segments are treated as literal strings (logged as `[string]`),
+  # unquoted ones are globbed and hashed (logged as `[file]` with a SHA).
+  # See: https://learn.microsoft.com/azure/devops/pipelines/release/caching
+  #
+  # We intentionally hash package.json + jest.config.js (NOT yarn.lock).
+  # The CI install step rewrites yarn.lock (Artifactory URL rewrites + sha1
+  # -> sha512 integrity upgrades), so its hash changes between the restore
+  # and save phases, producing "key has changed" warnings and permanent
+  # cache misses on subsequent runs. package.json is hand-edited only, so
+  # it's a stable signal for dependency-driven invalidation; jest.config.js
+  # invalidates when transforms / ignore patterns / cacheDirectory change.
+  - task: Cache@2
+    displayName: Cache Jest (transformação)
+    inputs:
+      key: 'jest | "$(Agent.OS)" | "$(NodeVersion)" | $(Build.Repository.LocalPath)/$(Build.Repository.Name)/package.json, $(Build.Repository.LocalPath)/$(Build.Repository.Name)/jest.config.js'
+      restoreKeys: |
+        jest | "$(Agent.OS)" | "$(NodeVersion)"
+        jest | "$(Agent.OS)"
+      path: '$(Build.Repository.LocalPath)/$(Build.Repository.Name)/.jest-cache'
+      cacheHitVar: JEST_CACHE_RESTORED

@@ -1,0 +1,328 @@
+(
+  $datasources := $exists($.components) and $count($.components) > 0 ? $.components[0].data.datasources : $.datasources;
+  $volKey := "value-creation_portfolio-performance_overview_portfolio-performance_volume";
+  $vsLyKey := "value-creation_portfolio-performance_overview_portfolio-performance_vs-ly";
+  $brandsKey := "value-creation_portfolio-performance_overview_portfolio-performance_brands";
+
+  $vol := $lookup($datasources, $volKey) ?? [];
+  $vsLy := $lookup($datasources, $vsLyKey) ?? [];
+  $brandsDs := $lookup($datasources, $brandsKey);
+
+  $getVol := function($seg, $kpi) {
+    $filter($vol, function($r) { $r.segment = $seg and $r.kpi_name = $kpi })[0]
+  };
+  $getVsLy := function($seg, $kpi) {
+    $filter($vsLy, function($r) { $r.segment = $seg and $r.kpi_name = $kpi })[0]
+  };
+
+  $volumeMonthSubtitle := $count($vol) > 0 ? $vol[0].month_refresh : "Jan'26";
+  $vsLyMonthSubtitle := $count($vsLy) > 0 ? $vsLy[0].month_refresh : "Jan'26";
+  $powerPeriod := $count($filter($vsLy, function($r) { $r.kpi_name = "power" })) > 0
+    ? $filter($vsLy, function($r) { $r.kpi_name = "power" })[0].period_refresh
+    : "Q4'25";
+
+  $columnDefs := [
+    {
+      "headerName": "Portfolio",
+      "field": "portfolio",
+      "minWidth": 180,
+      "maxWidth": 180,
+      "width": 180,
+      "config": {
+        "portfolioColumn": true,
+        "radiusLeft": true,
+        "radiusRight": true,
+        "widthType": true,
+        "marginTop": true,
+        "marginBottom": true,
+        "groups": [
+          { "initial": 1, "final": 1 },
+          { "initial": 2, "final": 2 },
+          { "initial": 3, "final": 3 },
+          { "initial": 4, "final": 4 },
+          { "initial": 5, "final": 5 }
+        ]
+      }
+    },
+    {
+      "headerName": "Volume",
+      "headerGroupComponentParams": {
+        "subtitle": $volumeMonthSubtitle,
+        "dateEndStorageKey": "volume_date_end"
+      },
+      "children": [
+        {
+          "headerName": "Growth Contrib.",
+          "field": "volume_growth_contr",
+          "config": {
+            "radiusLeft": true,
+            "groups": [{ "initial": 1, "final": 5 }]
+          },
+          "minWidth": 92,
+          "headerClass": ["ag-header-color-gray"]
+        },
+        {
+          "headerName": "Weight",
+          "field": "volume_weight",
+          "minWidth": 92,
+          "headerClass": ["ag-header-color-gray"]
+        },
+        {
+          "headerName": "vs LY",
+          "field": "volume_vs_ly",
+          "config": {
+            "radiusRight": true,
+            "groups": [{ "initial": 1, "final": 5 }]
+          },
+          "minWidth": 92,
+          "headerClass": ["ag-header-color-gray"]
+        }
+      ]
+    },
+    {
+      "headerName": "Net Revenue",
+      "headerGroupComponentParams": {
+        "subtitle": $vsLyMonthSubtitle,
+        "dateEndStorageKey": "nr_date_end"
+      },
+      "children": [
+        {
+          "headerName": "vs LY",
+          "field": "net_revenue_vs_ly",
+          "config": {
+            "radiusLeft": true,
+            "groups": [{ "initial": 1, "final": 5 }]
+          },
+          "minWidth": 85,
+          "headerClass": ["ag-header-color-gray", "ag-header-merge-3"]
+        }
+      ]
+    },
+    {
+      "headerName": "CORES",
+      "headerGroupComponentParams": {
+        "subtitle": $vsLyMonthSubtitle,
+        "dateEndStorageKey": "cores_date_end"
+      },
+      "children": [
+        {
+          "headerName": "vs LY",
+          "field": "cores_vs_ly",
+          "minWidth": 85,
+          "headerClass": ["ag-header-color-gray", "ag-header-hide"]
+        }
+      ]
+    },
+    {
+      "headerName": "Brand Power",
+      "headerGroupComponentParams": {
+        "subtitle": $powerPeriod,
+        "dateEndStorageKey": "power_date_end"
+      },
+      "children": [
+        {
+          "headerName": "vs LY",
+          "field": "brand_power_vs_ly",
+          "minWidth": 85,
+          "headerClass": ["ag-header-color-gray", "ag-header-hide"],
+          "config": {
+            "radiusRight": true,
+            "groups": [{ "initial": 1, "final": 5 }]
+          }
+        }
+      ]
+    },
+    {
+      "headerName": "S&M",
+      "headerGroupComponentParams": {
+        "subtitle": $vsLyMonthSubtitle,
+        "dateEndStorageKey": "sm_date_end"
+      },
+      "children": [
+        {
+          "headerName": "% of MACO",
+          "field": "sm_of_maco",
+          "minWidth": 85,
+          "headerClass": ["ag-header-color-gray", "ag-header-hide"],
+          "config": {
+            "radiusRight": true,
+            "groups": [{ "initial": 1, "final": 5 }]
+          }
+        },
+        {
+          "headerName": "Weight",
+          "field": "sm_weight",
+          "minWidth": 85,
+          "headerClass": ["ag-header-color-gray", "ag-header-hide"],
+          "config": {
+            "radiusRight": true,
+            "groups": [{ "initial": 1, "final": 5 }]
+          }
+        }
+      ]
+    },
+    {
+      "headerName": "Brands",
+      "children": [
+        {
+          "headerName": "Vol OG Vs LY",
+          "minWidth": 418,
+          "field": "brands_vol_og_vs_ly",
+          "headerClass": ["ag-header-color-gray"],
+          "config": {
+            "radiusLeft": true,
+            "radiusRight": true,
+            "groups": [{ "initial": 1, "final": 4 }]
+          }
+        }
+      ]
+    }
+  ];
+
+  $segmentOrder := ["Megabrands", "Expansion", "Sustain", "Tail"];
+
+  $othersImage := "https://theloop20.test-abinbev.acsitefactory.com/sites/g/files/wnfebl11871/files/styles/content_brand_square_image/public/2025-09/other-brands_1.png?itok=m1NiCDc6";
+  $noImageUrl := "https://theloop20.test-abinbev.acsitefactory.com//sites/g/files/wnfebl11871/files/2025-07/no-image-available-square_3.png";
+
+  $normalizeBrand := function($b) {
+    $type($b) = "object"
+      ? (
+          $name := $b.name ?? $b.brand ?? "";
+          $rawSrc := $b.src ?? $b.brand_image ?? "";
+          $useOthersImage := $name = "All Other Brands - Beer" or $rawSrc = "" or $rawSrc = $noImageUrl;
+          {
+            "src": $useOthersImage ? $othersImage : $rawSrc,
+            "name": $name,
+            "variation": $safeNumber($b.variation ?? $b.ac_vs_ly),
+            "variationMeasure": $b.variationMeasure ?? $b.unit_measure ?? "%",
+            "variationDirection": $b.variationDirection ?? $b.comp_ac_ly_direction ?? null,
+            "country": $b.country ?? ""
+          }
+        )
+      : {}
+  };
+
+  $ensureArray := function($value) {
+    $type($value) = "array"
+      ? $value
+      : ($exists($value) and $value != null ? [$value] : [])
+  };
+
+  $getBrandsForSegment := function($seg) {
+    $exists($brandsDs)
+      ? (
+          $type($brandsDs) = "array"
+            ? (
+                $bySeg := $filter($brandsDs, function($b) { $b.segment = $seg });
+                $count($bySeg) > 0
+                  ? (
+                      $first := $bySeg[0];
+                      $exists($first.brands)
+                        ? $ensureArray($map($ensureArray($first.brands), function($b) { $normalizeBrand($b) }))
+                        : $ensureArray($map($bySeg, function($b) { $normalizeBrand($b) }))
+                    )
+                  : []
+              )
+            : (
+                $segBrands := $lookup($brandsDs, $seg);
+                $exists($segBrands)
+                  ? $ensureArray($map($ensureArray($segBrands), function($b) { $normalizeBrand($b) }))
+                  : []
+              )
+        )
+      : []
+  };
+
+  $buildDataRow := function($seg, $isTotal) {
+    (
+      $lookupSeg := $isTotal ? "TOTAL" : $seg;
+      $vGc := $getVol($lookupSeg, "volume_growth_contr");
+      $vW := $getVol($lookupSeg, "volume_weight");
+      $vLy := $getVol($lookupSeg, "volume");
+      $nr := $getVsLy($lookupSeg, "nr");
+      $cores := $getVsLy($lookupSeg, "cores");
+      $power := $getVsLy($lookupSeg, "power");
+      $smMaco := $getVsLy($lookupSeg, "sm_of_maco");
+      $smW := $getVsLy($lookupSeg, "sm_weight");
+
+      $baseConfig := $isTotal ? { "radiusRight": true, "radiusTop": true } : {};
+      $portConfig := $isTotal
+        ? { "marginBottom": true, "radiusRight": true, "radiusTop": true }
+        : { "marginBottom": true };
+
+      {
+        "portfolio": $isTotal ? "Total" : $seg,
+        "portfolio_config": $portConfig,
+        "volume_growth_contr": $exists($vGc) ? $vGc.ac : null,
+        "volume_growth_contr_config": $merge([{ "unitMeasure": $exists($vGc) ? $vGc.unit_measure : "%" }, $baseConfig]),
+        "volume_weight": $exists($vW) ? $vW.ac : null,
+        "volume_weight_config": $merge([{ "unitMeasure": $exists($vW) ? $vW.unit_measure : "%" }, $baseConfig]),
+        "volume_vs_ly": $exists($vLy) ? $vLy.ac_vs_ly : null,
+        "volume_vs_ly_config": $merge([
+          {
+            "unitMeasure": $exists($vLy) ? ($vLy.unit_measure ?? "%") : "%",
+            "variationDirection": $exists($vLy) ? $vLy.comp_ac_ly_direction : null
+          },
+          $baseConfig
+        ]),
+        "net_revenue_vs_ly": $exists($nr) ? $nr.ac_vs_ly : null,
+        "net_revenue_vs_ly_config": $merge([
+          {
+            "unitMeasure": $exists($nr) ? $nr.unit_measure : "%",
+            "variationDirection": $exists($nr) ? $nr.comp_ac_ly_direction : null
+          },
+          $baseConfig
+        ]),
+        "cores_vs_ly": $exists($cores) ? $cores.ac_vs_ly : null,
+        "cores_vs_ly_config": $merge([
+          {
+            "unitMeasure": $exists($cores) ? $cores.unit_measure : "%",
+            "variationDirection": $exists($cores) ? $cores.comp_ac_ly_direction : null
+          },
+          $baseConfig
+        ]),
+        "brand_power_vs_ly": $exists($power) ? $power.ac_vs_ly : null,
+        "brand_power_vs_ly_config": $merge([
+          {
+            "unitMeasure": $exists($power) ? $power.unit_measure : "pp",
+            "variationDirection": $exists($power) ? $power.comp_ac_ly_direction : null
+          },
+          $baseConfig
+        ]),
+        "sm_of_maco": $exists($smMaco) ? $smMaco.ac : null,
+        "sm_of_maco_config": $merge([{ "unitMeasure": $exists($smMaco) ? $smMaco.unit_measure : "%" }, $baseConfig]),
+        "sm_weight": $exists($smW) ? $smW.ac : null,
+        "sm_weight_config": $merge([{ "unitMeasure": $exists($smW) ? $smW.unit_measure : "%" }, $baseConfig]),
+        "brands_vol_og_vs_ly": "_brands",
+        "brands_vol_og_vs_ly_config": {
+          "brands": $ensureArray($getBrandsForSegment($isTotal ? "TOTAL" : $seg))
+        }
+      }
+    )
+  };
+
+  $segmentRows := $map($segmentOrder, function($seg) { $buildDataRow($seg, false) });
+  $totalRow := $buildDataRow("Total", true);
+
+  $rowData := $append(
+    [[]],
+    $append(
+      $segmentRows,
+      $append([[]], [$totalRow])
+    )
+  );
+
+  $splits := [
+    ["Portfolio"],
+    ["Volume"],
+    ["Net Revenue", "CORES", "Market Share", "Brand Power"],
+    ["S&M"],
+    ["Brands"]
+  ];
+
+  {
+    "columnDefs": $columnDefs,
+    "rowData": $rowData,
+    "splits": $splits
+  }
+)

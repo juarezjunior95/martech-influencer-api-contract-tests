@@ -1,0 +1,118 @@
+77196634e817aa38d32ab0a8d8708368
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.toHast = toHast;
+var _devlop = require("devlop");
+var _footer = require("./footer.js");
+var _state = require("./state.js");
+/**
+ * @import {Nodes as HastNodes} from 'hast'
+ * @import {Nodes as MdastNodes} from 'mdast'
+ * @import {Options} from './state.js'
+ */
+
+/**
+ * Transform mdast to hast.
+ *
+ * ##### Notes
+ *
+ * ###### HTML
+ *
+ * Raw HTML is available in mdast as `html` nodes and can be embedded in hast
+ * as semistandard `raw` nodes.
+ * Most utilities ignore `raw` nodes but two notable ones don’t:
+ *
+ * *   `hast-util-to-html` also has an option `allowDangerousHtml` which will
+ *     output the raw HTML.
+ *     This is typically discouraged as noted by the option name but is useful
+ *     if you completely trust authors
+ * *   `hast-util-raw` can handle the raw embedded HTML strings by parsing them
+ *     into standard hast nodes (`element`, `text`, etc).
+ *     This is a heavy task as it needs a full HTML parser, but it is the only
+ *     way to support untrusted content
+ *
+ * ###### Footnotes
+ *
+ * Many options supported here relate to footnotes.
+ * Footnotes are not specified by CommonMark, which we follow by default.
+ * They are supported by GitHub, so footnotes can be enabled in markdown with
+ * `mdast-util-gfm`.
+ *
+ * The options `footnoteBackLabel` and `footnoteLabel` define natural language
+ * that explains footnotes, which is hidden for sighted users but shown to
+ * assistive technology.
+ * When your page is not in English, you must define translated values.
+ *
+ * Back references use ARIA attributes, but the section label itself uses a
+ * heading that is hidden with an `sr-only` class.
+ * To show it to sighted users, define different attributes in
+ * `footnoteLabelProperties`.
+ *
+ * ###### Clobbering
+ *
+ * Footnotes introduces a problem, as it links footnote calls to footnote
+ * definitions on the page through `id` attributes generated from user content,
+ * which results in DOM clobbering.
+ *
+ * DOM clobbering is this:
+ *
+ * ```html
+ * <p id=x></p>
+ * <script>alert(x) // `x` now refers to the DOM `p#x` element</script>
+ * ```
+ *
+ * Elements by their ID are made available by browsers on the `window` object,
+ * which is a security risk.
+ * Using a prefix solves this problem.
+ *
+ * More information on how to handle clobbering and the prefix is explained in
+ * Example: headings (DOM clobbering) in `rehype-sanitize`.
+ *
+ * ###### Unknown nodes
+ *
+ * Unknown nodes are nodes with a type that isn’t in `handlers` or `passThrough`.
+ * The default behavior for unknown nodes is:
+ *
+ * *   when the node has a `value` (and doesn’t have `data.hName`,
+ *     `data.hProperties`, or `data.hChildren`, see later), create a hast `text`
+ *     node
+ * *   otherwise, create a `<div>` element (which could be changed with
+ *     `data.hName`), with its children mapped from mdast to hast as well
+ *
+ * This behavior can be changed by passing an `unknownHandler`.
+ *
+ * @param {MdastNodes} tree
+ *   mdast tree.
+ * @param {Options | null | undefined} [options]
+ *   Configuration (optional).
+ * @returns {HastNodes}
+ *   hast tree.
+ */
+function toHast(tree, options) {
+  const state = (0, _state.createState)(tree, options);
+  const node = state.one(tree, undefined);
+  const foot = (0, _footer.footer)(state);
+  /** @type {HastNodes} */
+  const result = Array.isArray(node) ? {
+    type: 'root',
+    children: node
+  } : node || {
+    type: 'root',
+    children: []
+  };
+  if (foot) {
+    // If there’s a footer, there were definitions, meaning block
+    // content.
+    // So `result` is a parent node.
+    (0, _devlop.ok)('children' in result);
+    result.children.push({
+      type: 'text',
+      value: '\n'
+    }, foot);
+  }
+  return result;
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJuYW1lcyI6WyJfZGV2bG9wIiwicmVxdWlyZSIsIl9mb290ZXIiLCJfc3RhdGUiLCJ0b0hhc3QiLCJ0cmVlIiwib3B0aW9ucyIsInN0YXRlIiwiY3JlYXRlU3RhdGUiLCJub2RlIiwib25lIiwidW5kZWZpbmVkIiwiZm9vdCIsImZvb3RlciIsInJlc3VsdCIsIkFycmF5IiwiaXNBcnJheSIsInR5cGUiLCJjaGlsZHJlbiIsImFzc2VydCIsInB1c2giLCJ2YWx1ZSJdLCJzb3VyY2VzIjpbImluZGV4LmpzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogQGltcG9ydCB7Tm9kZXMgYXMgSGFzdE5vZGVzfSBmcm9tICdoYXN0J1xuICogQGltcG9ydCB7Tm9kZXMgYXMgTWRhc3ROb2Rlc30gZnJvbSAnbWRhc3QnXG4gKiBAaW1wb3J0IHtPcHRpb25zfSBmcm9tICcuL3N0YXRlLmpzJ1xuICovXG5cbmltcG9ydCB7b2sgYXMgYXNzZXJ0fSBmcm9tICdkZXZsb3AnXG5pbXBvcnQge2Zvb3Rlcn0gZnJvbSAnLi9mb290ZXIuanMnXG5pbXBvcnQge2NyZWF0ZVN0YXRlfSBmcm9tICcuL3N0YXRlLmpzJ1xuXG4vKipcbiAqIFRyYW5zZm9ybSBtZGFzdCB0byBoYXN0LlxuICpcbiAqICMjIyMjIE5vdGVzXG4gKlxuICogIyMjIyMjIEhUTUxcbiAqXG4gKiBSYXcgSFRNTCBpcyBhdmFpbGFibGUgaW4gbWRhc3QgYXMgYGh0bWxgIG5vZGVzIGFuZCBjYW4gYmUgZW1iZWRkZWQgaW4gaGFzdFxuICogYXMgc2VtaXN0YW5kYXJkIGByYXdgIG5vZGVzLlxuICogTW9zdCB1dGlsaXRpZXMgaWdub3JlIGByYXdgIG5vZGVzIGJ1dCB0d28gbm90YWJsZSBvbmVzIGRvbuKAmXQ6XG4gKlxuICogKiAgIGBoYXN0LXV0aWwtdG8taHRtbGAgYWxzbyBoYXMgYW4gb3B0aW9uIGBhbGxvd0Rhbmdlcm91c0h0bWxgIHdoaWNoIHdpbGxcbiAqICAgICBvdXRwdXQgdGhlIHJhdyBIVE1MLlxuICogICAgIFRoaXMgaXMgdHlwaWNhbGx5IGRpc2NvdXJhZ2VkIGFzIG5vdGVkIGJ5IHRoZSBvcHRpb24gbmFtZSBidXQgaXMgdXNlZnVsXG4gKiAgICAgaWYgeW91IGNvbXBsZXRlbHkgdHJ1c3QgYXV0aG9yc1xuICogKiAgIGBoYXN0LXV0aWwtcmF3YCBjYW4gaGFuZGxlIHRoZSByYXcgZW1iZWRkZWQgSFRNTCBzdHJpbmdzIGJ5IHBhcnNpbmcgdGhlbVxuICogICAgIGludG8gc3RhbmRhcmQgaGFzdCBub2RlcyAoYGVsZW1lbnRgLCBgdGV4dGAsIGV0YykuXG4gKiAgICAgVGhpcyBpcyBhIGhlYXZ5IHRhc2sgYXMgaXQgbmVlZHMgYSBmdWxsIEhUTUwgcGFyc2VyLCBidXQgaXQgaXMgdGhlIG9ubHlcbiAqICAgICB3YXkgdG8gc3VwcG9ydCB1bnRydXN0ZWQgY29udGVudFxuICpcbiAqICMjIyMjIyBGb290bm90ZXNcbiAqXG4gKiBNYW55IG9wdGlvbnMgc3VwcG9ydGVkIGhlcmUgcmVsYXRlIHRvIGZvb3Rub3Rlcy5cbiAqIEZvb3Rub3RlcyBhcmUgbm90IHNwZWNpZmllZCBieSBDb21tb25NYXJrLCB3aGljaCB3ZSBmb2xsb3cgYnkgZGVmYXVsdC5cbiAqIFRoZXkgYXJlIHN1cHBvcnRlZCBieSBHaXRIdWIsIHNvIGZvb3Rub3RlcyBjYW4gYmUgZW5hYmxlZCBpbiBtYXJrZG93biB3aXRoXG4gKiBgbWRhc3QtdXRpbC1nZm1gLlxuICpcbiAqIFRoZSBvcHRpb25zIGBmb290bm90ZUJhY2tMYWJlbGAgYW5kIGBmb290bm90ZUxhYmVsYCBkZWZpbmUgbmF0dXJhbCBsYW5ndWFnZVxuICogdGhhdCBleHBsYWlucyBmb290bm90ZXMsIHdoaWNoIGlzIGhpZGRlbiBmb3Igc2lnaHRlZCB1c2VycyBidXQgc2hvd24gdG9cbiAqIGFzc2lzdGl2ZSB0ZWNobm9sb2d5LlxuICogV2hlbiB5b3VyIHBhZ2UgaXMgbm90IGluIEVuZ2xpc2gsIHlvdSBtdXN0IGRlZmluZSB0cmFuc2xhdGVkIHZhbHVlcy5cbiAqXG4gKiBCYWNrIHJlZmVyZW5jZXMgdXNlIEFSSUEgYXR0cmlidXRlcywgYnV0IHRoZSBzZWN0aW9uIGxhYmVsIGl0c2VsZiB1c2VzIGFcbiAqIGhlYWRpbmcgdGhhdCBpcyBoaWRkZW4gd2l0aCBhbiBgc3Itb25seWAgY2xhc3MuXG4gKiBUbyBzaG93IGl0IHRvIHNpZ2h0ZWQgdXNlcnMsIGRlZmluZSBkaWZmZXJlbnQgYXR0cmlidXRlcyBpblxuICogYGZvb3Rub3RlTGFiZWxQcm9wZXJ0aWVzYC5cbiAqXG4gKiAjIyMjIyMgQ2xvYmJlcmluZ1xuICpcbiAqIEZvb3Rub3RlcyBpbnRyb2R1Y2VzIGEgcHJvYmxlbSwgYXMgaXQgbGlua3MgZm9vdG5vdGUgY2FsbHMgdG8gZm9vdG5vdGVcbiAqIGRlZmluaXRpb25zIG9uIHRoZSBwYWdlIHRocm91Z2ggYGlkYCBhdHRyaWJ1dGVzIGdlbmVyYXRlZCBmcm9tIHVzZXIgY29udGVudCxcbiAqIHdoaWNoIHJlc3VsdHMgaW4gRE9NIGNsb2JiZXJpbmcuXG4gKlxuICogRE9NIGNsb2JiZXJpbmcgaXMgdGhpczpcbiAqXG4gKiBgYGBodG1sXG4gKiA8cCBpZD14PjwvcD5cbiAqIDxzY3JpcHQ+YWxlcnQoeCkgLy8gYHhgIG5vdyByZWZlcnMgdG8gdGhlIERPTSBgcCN4YCBlbGVtZW50PC9zY3JpcHQ+XG4gKiBgYGBcbiAqXG4gKiBFbGVtZW50cyBieSB0aGVpciBJRCBhcmUgbWFkZSBhdmFpbGFibGUgYnkgYnJvd3NlcnMgb24gdGhlIGB3aW5kb3dgIG9iamVjdCxcbiAqIHdoaWNoIGlzIGEgc2VjdXJpdHkgcmlzay5cbiAqIFVzaW5nIGEgcHJlZml4IHNvbHZlcyB0aGlzIHByb2JsZW0uXG4gKlxuICogTW9yZSBpbmZvcm1hdGlvbiBvbiBob3cgdG8gaGFuZGxlIGNsb2JiZXJpbmcgYW5kIHRoZSBwcmVmaXggaXMgZXhwbGFpbmVkIGluXG4gKiBFeGFtcGxlOiBoZWFkaW5ncyAoRE9NIGNsb2JiZXJpbmcpIGluIGByZWh5cGUtc2FuaXRpemVgLlxuICpcbiAqICMjIyMjIyBVbmtub3duIG5vZGVzXG4gKlxuICogVW5rbm93biBub2RlcyBhcmUgbm9kZXMgd2l0aCBhIHR5cGUgdGhhdCBpc27igJl0IGluIGBoYW5kbGVyc2Agb3IgYHBhc3NUaHJvdWdoYC5cbiAqIFRoZSBkZWZhdWx0IGJlaGF2aW9yIGZvciB1bmtub3duIG5vZGVzIGlzOlxuICpcbiAqICogICB3aGVuIHRoZSBub2RlIGhhcyBhIGB2YWx1ZWAgKGFuZCBkb2VzbuKAmXQgaGF2ZSBgZGF0YS5oTmFtZWAsXG4gKiAgICAgYGRhdGEuaFByb3BlcnRpZXNgLCBvciBgZGF0YS5oQ2hpbGRyZW5gLCBzZWUgbGF0ZXIpLCBjcmVhdGUgYSBoYXN0IGB0ZXh0YFxuICogICAgIG5vZGVcbiAqICogICBvdGhlcndpc2UsIGNyZWF0ZSBhIGA8ZGl2PmAgZWxlbWVudCAod2hpY2ggY291bGQgYmUgY2hhbmdlZCB3aXRoXG4gKiAgICAgYGRhdGEuaE5hbWVgKSwgd2l0aCBpdHMgY2hpbGRyZW4gbWFwcGVkIGZyb20gbWRhc3QgdG8gaGFzdCBhcyB3ZWxsXG4gKlxuICogVGhpcyBiZWhhdmlvciBjYW4gYmUgY2hhbmdlZCBieSBwYXNzaW5nIGFuIGB1bmtub3duSGFuZGxlcmAuXG4gKlxuICogQHBhcmFtIHtNZGFzdE5vZGVzfSB0cmVlXG4gKiAgIG1kYXN0IHRyZWUuXG4gKiBAcGFyYW0ge09wdGlvbnMgfCBudWxsIHwgdW5kZWZpbmVkfSBbb3B0aW9uc11cbiAqICAgQ29uZmlndXJhdGlvbiAob3B0aW9uYWwpLlxuICogQHJldHVybnMge0hhc3ROb2Rlc31cbiAqICAgaGFzdCB0cmVlLlxuICovXG5leHBvcnQgZnVuY3Rpb24gdG9IYXN0KHRyZWUsIG9wdGlvbnMpIHtcbiAgY29uc3Qgc3RhdGUgPSBjcmVhdGVTdGF0ZSh0cmVlLCBvcHRpb25zKVxuICBjb25zdCBub2RlID0gc3RhdGUub25lKHRyZWUsIHVuZGVmaW5lZClcbiAgY29uc3QgZm9vdCA9IGZvb3RlcihzdGF0ZSlcbiAgLyoqIEB0eXBlIHtIYXN0Tm9kZXN9ICovXG4gIGNvbnN0IHJlc3VsdCA9IEFycmF5LmlzQXJyYXkobm9kZSlcbiAgICA/IHt0eXBlOiAncm9vdCcsIGNoaWxkcmVuOiBub2RlfVxuICAgIDogbm9kZSB8fCB7dHlwZTogJ3Jvb3QnLCBjaGlsZHJlbjogW119XG5cbiAgaWYgKGZvb3QpIHtcbiAgICAvLyBJZiB0aGVyZeKAmXMgYSBmb290ZXIsIHRoZXJlIHdlcmUgZGVmaW5pdGlvbnMsIG1lYW5pbmcgYmxvY2tcbiAgICAvLyBjb250ZW50LlxuICAgIC8vIFNvIGByZXN1bHRgIGlzIGEgcGFyZW50IG5vZGUuXG4gICAgYXNzZXJ0KCdjaGlsZHJlbicgaW4gcmVzdWx0KVxuICAgIHJlc3VsdC5jaGlsZHJlbi5wdXNoKHt0eXBlOiAndGV4dCcsIHZhbHVlOiAnXFxuJ30sIGZvb3QpXG4gIH1cblxuICByZXR1cm4gcmVzdWx0XG59XG4iXSwibWFwcGluZ3MiOiI7Ozs7OztBQU1BLElBQUFBLE9BQUEsR0FBQUMsT0FBQTtBQUNBLElBQUFDLE9BQUEsR0FBQUQsT0FBQTtBQUNBLElBQUFFLE1BQUEsR0FBQUYsT0FBQTtBQVJBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7O0FBTUE7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNPLFNBQVNHLE1BQU1BLENBQUNDLElBQUksRUFBRUMsT0FBTyxFQUFFO0VBQ3BDLE1BQU1DLEtBQUssR0FBRyxJQUFBQyxrQkFBVyxFQUFDSCxJQUFJLEVBQUVDLE9BQU8sQ0FBQztFQUN4QyxNQUFNRyxJQUFJLEdBQUdGLEtBQUssQ0FBQ0csR0FBRyxDQUFDTCxJQUFJLEVBQUVNLFNBQVMsQ0FBQztFQUN2QyxNQUFNQyxJQUFJLEdBQUcsSUFBQUMsY0FBTSxFQUFDTixLQUFLLENBQUM7RUFDMUI7RUFDQSxNQUFNTyxNQUFNLEdBQUdDLEtBQUssQ0FBQ0MsT0FBTyxDQUFDUCxJQUFJLENBQUMsR0FDOUI7SUFBQ1EsSUFBSSxFQUFFLE1BQU07SUFBRUMsUUFBUSxFQUFFVDtFQUFJLENBQUMsR0FDOUJBLElBQUksSUFBSTtJQUFDUSxJQUFJLEVBQUUsTUFBTTtJQUFFQyxRQUFRLEVBQUU7RUFBRSxDQUFDO0VBRXhDLElBQUlOLElBQUksRUFBRTtJQUNSO0lBQ0E7SUFDQTtJQUNBLElBQUFPLFVBQU0sRUFBQyxVQUFVLElBQUlMLE1BQU0sQ0FBQztJQUM1QkEsTUFBTSxDQUFDSSxRQUFRLENBQUNFLElBQUksQ0FBQztNQUFDSCxJQUFJLEVBQUUsTUFBTTtNQUFFSSxLQUFLLEVBQUU7SUFBSSxDQUFDLEVBQUVULElBQUksQ0FBQztFQUN6RDtFQUVBLE9BQU9FLE1BQU07QUFDZiIsImlnbm9yZUxpc3QiOltdfQ==

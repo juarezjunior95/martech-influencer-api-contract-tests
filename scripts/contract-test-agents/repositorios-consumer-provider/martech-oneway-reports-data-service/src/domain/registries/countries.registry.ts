@@ -1,0 +1,320 @@
+import { getCountryFlag } from "@common/utils/images/country-image.utils";
+
+/**
+ * Central registry record for a country.
+ *
+ * `id` is the 3-letter ISO code used throughout presets and datasources.
+ * `iso2` is the 2-letter ISO code, used to translate JWT
+ * `supportedCountries` claims (which arrive as ISO2) into the canonical
+ * ISO3 ids.
+ * `zone` groups countries for zone-based filtering.
+ * `match_names` are synonyms accepted by upstream databases.
+ */
+export interface CountryRecord {
+  id: string;
+  iso2: string;
+  title: string;
+  zone: string;
+  flag_icon: string;
+  quick_filter_label: string;
+  match_names: string[];
+}
+
+export type CountriesRegistry = Record<string, CountryRecord>;
+
+const rawEntries: Array<Omit<CountryRecord, "flag_icon">> = [
+  // Africa
+  {
+    id: "MOZ",
+    iso2: "MZ",
+    title: "Mozambique",
+    zone: "AFR",
+    match_names: ["MOZ", "MOZAMBIQUE"],
+    quick_filter_label: "Mozambique",
+  },
+  {
+    id: "NGA",
+    iso2: "NG",
+    title: "Nigeria",
+    zone: "AFR",
+    match_names: ["NGA", "NIGERIA"],
+    quick_filter_label: "Nigeria",
+  },
+  {
+    id: "ZAF",
+    iso2: "ZA",
+    title: "South Africa",
+    zone: "AFR",
+    match_names: ["ZAF", "SOUTH_AFRICA"],
+    quick_filter_label: "South Africa",
+  },
+  {
+    id: "TZA",
+    iso2: "TZ",
+    title: "Tanzania",
+    zone: "AFR",
+    match_names: ["TZA", "TANZANIA"],
+    quick_filter_label: "Tanzania",
+  },
+  {
+    id: "UGA",
+    iso2: "UG",
+    title: "Uganda",
+    zone: "AFR",
+    match_names: ["UGA", "UGANDA"],
+    quick_filter_label: "Uganda",
+  },
+  {
+    id: "ZMB",
+    iso2: "ZM",
+    title: "Zambia",
+    zone: "AFR",
+    match_names: ["ZMB", "ZAMBIA"],
+    quick_filter_label: "Zambia",
+  },
+
+  // Asia Pacific
+  {
+    id: "CHN",
+    iso2: "CN",
+    title: "China",
+    zone: "APAC",
+    match_names: ["CHN", "CHINA"],
+    quick_filter_label: "China",
+  },
+  {
+    id: "IND",
+    iso2: "IN",
+    title: "India",
+    zone: "APAC",
+    match_names: ["IND", "INDIA"],
+    quick_filter_label: "India",
+  },
+  {
+    id: "JPN",
+    iso2: "JP",
+    title: "Japan",
+    zone: "APAC",
+    match_names: ["JPN", "JAPAN"],
+    quick_filter_label: "Japan",
+  },
+  {
+    id: "KOR",
+    iso2: "KR",
+    title: "South Korea",
+    zone: "APAC",
+    match_names: ["KOR", "SOUTH_KOREA"],
+    quick_filter_label: "South Korea",
+  },
+  {
+    id: "VNM",
+    iso2: "VN",
+    title: "Vietnam",
+    zone: "APAC",
+    match_names: ["VNM", "VIETNAM"],
+    quick_filter_label: "Vietnam",
+  },
+
+  // Europe
+  {
+    id: "BEL",
+    iso2: "BE",
+    title: "Belgium",
+    zone: "EUR",
+    match_names: ["BEL", "BELGIUM"],
+    quick_filter_label: "Belgium",
+  },
+  {
+    id: "FRA",
+    iso2: "FR",
+    title: "France",
+    zone: "EUR",
+    match_names: ["FRA", "FRANCE"],
+    quick_filter_label: "France",
+  },
+  {
+    id: "DEU",
+    iso2: "DE",
+    title: "Germany",
+    zone: "EUR",
+    match_names: ["DEU", "GERMANY"],
+    quick_filter_label: "Germany",
+  },
+  {
+    id: "ITA",
+    iso2: "IT",
+    title: "Italy",
+    zone: "EUR",
+    match_names: ["ITA", "ITALY"],
+    quick_filter_label: "Italy",
+  },
+  {
+    id: "NLD",
+    iso2: "NL",
+    title: "Netherlands",
+    zone: "EUR",
+    match_names: ["NLD", "NETHERLANDS"],
+    quick_filter_label: "Netherlands",
+  },
+  {
+    id: "GBR",
+    iso2: "GB",
+    title: "United Kingdom",
+    zone: "EUR",
+    match_names: ["GBR", "UNITED_KINGDOM"],
+    quick_filter_label: "United Kingdom",
+  },
+
+  // Middle Americas
+  {
+    id: "COL",
+    iso2: "CO",
+    title: "Colombia",
+    zone: "MAZ",
+    match_names: ["COL", "COLOMBIA"],
+    quick_filter_label: "Colombia",
+  },
+  {
+    id: "DOM",
+    iso2: "DO",
+    title: "Dominican Republic",
+    zone: "MAZ",
+    match_names: ["DOM", "DOMINICAN_REPUBLIC"],
+    quick_filter_label: "Dominican Republic",
+  },
+  {
+    id: "ECU",
+    iso2: "EC",
+    title: "Ecuador",
+    zone: "MAZ",
+    match_names: ["ECU", "ECUADOR"],
+    quick_filter_label: "Ecuador",
+  },
+  {
+    id: "SLV",
+    iso2: "SV",
+    title: "El Salvador",
+    zone: "MAZ",
+    match_names: ["SLV", "EL_SALVADOR"],
+    quick_filter_label: "El Salvador",
+  },
+  {
+    id: "GTM",
+    iso2: "GT",
+    title: "Guatemala",
+    zone: "MAZ",
+    match_names: ["GTM", "GUATEMALA"],
+    quick_filter_label: "Guatemala",
+  },
+  {
+    id: "HND",
+    iso2: "HN",
+    title: "Honduras",
+    zone: "MAZ",
+    match_names: ["HND", "HONDURAS"],
+    quick_filter_label: "Honduras",
+  },
+  {
+    id: "MEX",
+    iso2: "MX",
+    title: "Mexico",
+    zone: "MAZ",
+    match_names: ["MEX", "MEXICO"],
+    quick_filter_label: "Mexico",
+  },
+  {
+    id: "PAN",
+    iso2: "PA",
+    title: "Panama",
+    zone: "MAZ",
+    match_names: ["PAN", "PANAMA"],
+    quick_filter_label: "Panama",
+  },
+  {
+    id: "PER",
+    iso2: "PE",
+    title: "Peru",
+    zone: "MAZ",
+    match_names: ["PER", "PERU"],
+    quick_filter_label: "Peru",
+  },
+
+  // North Americas
+  {
+    id: "CAN",
+    iso2: "CA",
+    title: "Canada",
+    zone: "NAZ",
+    match_names: ["CAN", "CANADA"],
+    quick_filter_label: "Canada",
+  },
+  {
+    id: "USA",
+    iso2: "US",
+    title: "United States",
+    zone: "NAZ",
+    match_names: ["USA", "UNITED_STATES"],
+    quick_filter_label: "United States",
+  },
+
+  // South Americas
+  {
+    id: "ARG",
+    iso2: "AR",
+    title: "Argentina",
+    zone: "SAZ",
+    match_names: ["ARG", "ARGENTINA"],
+    quick_filter_label: "Argentina",
+  },
+  {
+    id: "BOL",
+    iso2: "BO",
+    title: "Bolivia",
+    zone: "SAZ",
+    match_names: ["BOL", "BOLIVIA"],
+    quick_filter_label: "Bolivia",
+  },
+  {
+    id: "BRA",
+    iso2: "BR",
+    title: "Brazil",
+    zone: "SAZ",
+    match_names: ["BRA", "BRAZIL"],
+    quick_filter_label: "Brazil",
+  },
+  {
+    id: "CHL",
+    iso2: "CL",
+    title: "Chile",
+    zone: "SAZ",
+    match_names: ["CHL", "CHILE"],
+    quick_filter_label: "Chile",
+  },
+  {
+    id: "PRY",
+    iso2: "PY",
+    title: "Paraguay",
+    zone: "SAZ",
+    match_names: ["PRY", "PARAGUAY"],
+    quick_filter_label: "Paraguay",
+  },
+  {
+    id: "URY",
+    iso2: "UY",
+    title: "Uruguay",
+    zone: "SAZ",
+    match_names: ["URY", "URUGUAY"],
+    quick_filter_label: "Uruguay",
+  },
+];
+
+export const countriesRegistry: CountriesRegistry = rawEntries.reduce(
+  (acc, entry) => {
+    acc[entry.id] = {
+      ...entry,
+      flag_icon: getCountryFlag(entry.id),
+    };
+    return acc;
+  },
+  {} as CountriesRegistry,
+);

@@ -1,0 +1,97 @@
+name: $(Build.BuildId)
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+trigger:
+  branches:
+    include:
+      - master
+      - release/*
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: GHQ_B2B_Delta/golden-CICD-library
+      ref: refs/heads/master
+    - repository: uat_bees_microservices
+      type: git
+      name: GHQ_B2B_Delta/bees-microservices
+      ref: refs/heads/uat
+    - repository: prod_bees_microservices
+      type: git
+      name: GHQ_B2B_Delta/bees-microservices
+      ref: refs/heads/prod
+
+variables:
+  - group: BEES-GoldenCICD-Microservice-vg
+  - group: MFE-ComponentTest-vg
+  - name: NodeVersion
+    value: '18.x'
+  - name: NpmrcFilePath
+    value: '$(Build.Repository.LocalPath)/$(Build.Repository.Name)/.npmrc'
+  # Azure Pipelines does not set CI=true by default (only TF_BUILD).
+  # Export CI so jest.config.js (and any other tool that checks it) enables CI tuning + reporters.
+  - name: CI
+    value: 'true'
+
+extends:
+  template: ms_pipeline.yml@templates
+  parameters:
+    appName: 'martech-theloophub-mfe'
+    artifactName: 'martech-theloophub-mfe'
+    automaticReviewerApplicationType: 'microfrontend'
+
+    dockerBuild: true
+    dockerProjectPath: '$(Build.Repository.LocalPath)/$(Build.Repository.Name)'
+    dockerImageNames: ['martech-theloophub-mfe']
+    dockerVersionMicroservice: '1.0.0'
+    dockerPublish: true
+    dockerPublishCondition: or(
+      startsWith(variables['Build.SourceBranch'], 'refs/heads/release/'),
+      eq(variables['Build.SourceBranch'], 'refs/heads/master')
+      )
+    dockerVersionValidation: git
+    dockerBuildCache: false
+
+    downloadVault: false
+
+    preBuildSteps:
+      - template: ci/azure/jest-cache-steps.yml@self
+      - template: ci/azure/build-cache-steps.yml@self
+      - template: ci/azure/sonar-cache-steps.yml@self
+
+    jsUnitTestCommand: coverage
+    jsBuildCommand: build
+
+    language: js
+
+    npmArtifactoryAuthentication: true
+
+    sonarConfigFile: '$(Build.Repository.Name)/sonar-project.properties'
+    sonarBuildBreaker: true
+
+    snykTargetFile: 'package.json'
+
+    environments:
+      - uat
+      - prod
+
+    envConfig:
+      uat:
+        condition: and(succeeded(),
+          startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')
+          )
+        envName: '$(EnvironmentUAT)'
+        dependsOn:
+          - MASTER_CD
+        repositoryKey: uat_bees_microservices
+      prod:
+        condition: and(succeeded(),
+          eq(variables['Build.SourceBranch'], 'refs/heads/master')
+          )
+        envName: 'martech-theloophub-mfe-prod'
+        dependsOn:
+          - MASTER_CD
+        repositoryKey: prod_bees_microservices

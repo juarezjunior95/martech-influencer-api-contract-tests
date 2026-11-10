@@ -1,0 +1,119 @@
+/**
+* 🎯 Component: Breakdown Chart
+* 📍 Used on: Consumer > Audience Targeting > Performance
+* 🔄 Input: consumer_audience-targeting_performance_breakdown
+* 📤 Output: Array of tier objects with audience breakdown (core, halo, total)
+* 🔧 Config: tierOrder, tierLevelMapping, tierNameOverrides, emptyDatasourceTierName
+*/
+(
+  $config := {
+    "tierOrder": ["Beer", "Core Co", "Brand", "Competitor"],
+    "tierLevelMapping": {
+      "Beer": "beer",
+      "Core Co": "core_co",
+      "Brand": "brand",
+      "Competitor": "competitor"
+    },
+    "tierNameOverrides": {},
+    "emptyDatasourceTierName": "Brand (No data)"
+  };
+
+  $dsKey := $keys(datasources)[0];
+  $rawData := $lookup(datasources, $dsKey);
+  $data := $type($rawData) = "array" ? $rawData : $exists($rawData) ? [$rawData] : [];
+
+  $isValidNumber := function($val) { $type($val) = "number" };
+
+  $formatOneDecimal := function($val) {
+    (
+      $rounded := $round($val * 10) / 10;
+      $str := $string($rounded);
+      $contains($str, ".") ? $str : $str & ".0"
+    )
+  };
+
+  $formatAudienceMetric := function($val) {
+    $isValidNumber($val) ? $formatOneDecimal($val) : "N/A"
+  };
+
+  $formatComparisonIndex := function($val) {
+    $isValidNumber($val) ? $formatOneDecimal($val) : "-"
+  };
+
+  $getDirection := function($value) {
+    $not($isValidNumber($value)) ? "neutral" :
+    $value > 0 ? "up" :
+    $value < 0 ? "down" : "neutral"
+  };
+
+  $formatBrandName := function($brand) {
+    $brand and $type($brand) = "string"
+      ? $join(
+          $map($split($lowercase($trim($brand)), " "), function($segment) {
+            $join(
+              $map($split($segment, "-"), function($part) {
+                $part
+                  ? $uppercase($substring($part, 0, 1)) & $substring($part, 1)
+                  : ""
+              }),
+              "-"
+            )
+          }),
+          " "
+        )
+      : ""
+  };
+
+  $buildAudience := function($row, $prefix) {
+    (
+      $ac := $lookup($row, $prefix & "_ac");
+      $vsLy := $lookup($row, $prefix & "_vs_ly");
+      $index := $lookup($row, $prefix & "_index");
+      $not($exists($ac)) or $ac = null ? null : {
+        "value": $formatAudienceMetric($ac),
+        "yoy_change": $formatAudienceMetric($vsLy),
+        "yoy_direction": $getDirection($vsLy),
+        "performance_index": $formatAudienceMetric($index),
+        "comparison_index": $formatComparisonIndex($index)
+      }
+    )
+  };
+
+  $map($config.tierOrder, function($tierType) {
+    (
+      $tierRows := $data[entity_type = $tierType];
+      $tierLevel := $lookup($config.tierLevelMapping, $tierType);
+      $tierNameOverride := $lookup($config.tierNameOverrides, $tierType);
+      $count($tierRows) > 0 ? (
+        $row := $tierRows[0];
+        $tierNameRaw := $tierNameOverride ? $tierNameOverride : $row.entity_name;
+        $tierName := $formatBrandName($tierNameRaw);
+        $coreAud := $buildAudience($row, "core");
+        $haloAud := $buildAudience($row, "halo");
+        $totalAud := $buildAudience($row, "total");
+        $hasAnyAudience := (
+          ($exists($coreAud) and $coreAud != null) or
+          ($exists($haloAud) and $haloAud != null) or
+          ($exists($totalAud) and $totalAud != null)
+        );
+        $hasAnyAudience ? {
+          "tier_level": $tierLevel,
+          "tier_name": $tierName,
+          "audiences": {
+            "core": $coreAud,
+            "halo": $haloAud,
+            "total": $totalAud
+          }
+        } : {
+          "tier_level": $tierLevel,
+          "tier_name": $tierName,
+          "empty": true
+        }
+      ) : {
+        "tier_level": $tierLevel,
+        "tier_name": $formatBrandName($tierNameOverride ? $tierNameOverride : $tierType),
+        "empty": true
+      }
+    )
+  })
+)

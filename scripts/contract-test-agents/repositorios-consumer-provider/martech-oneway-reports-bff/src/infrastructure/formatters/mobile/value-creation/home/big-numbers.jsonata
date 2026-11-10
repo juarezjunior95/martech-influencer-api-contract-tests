@@ -1,0 +1,75 @@
+/**
+ * 🔢 MOBILE: VALUE CREATION HOME STRATEGY DRIVERS BIG NUMBERS FORMATTER
+ * 🎯 Component: Strategy Driver Big Numbers (ABI Lovers, Occasions, LDA-24 Participation)
+ * 📍 Used on: Mobile Value Creation Home > Strategy Drivers > Big Numbers
+ * 🔄 Input: value-creation_home_strategy-drivers_pos
+ * 📤 Output: Array of 3 cards, each with chartHeader (title, period) and bigNumberData or noticeMessage
+ */
+(
+  $data := $lookup(datasources, "value-creation_home_strategy-drivers_pos") ? $lookup(datasources, "value-creation_home_strategy-drivers_pos") : [];
+
+  $config := {
+    "cards": [
+      { "kpi": "p7d", "title": "ABI Lovers", "comp_unit_key": "comp_unit_of_measure" },
+      { "kpi": "occasions", "title": "Occasions" },
+      { "kpi": "p4w", "title": "LDA-24 Participation", "comp_unit_key": "comp_unit_of_measure" }
+    ],
+    "comparison": { "label": "vs", "value": "LY" },
+    "empty_message": "Data not available",
+    "direction": { "up": "positive", "down": "negative" }
+  };
+
+  $getRowForKpi := function($kpiKey) {
+    $data[$lowercase(kpi_name) = $lowercase($kpiKey)][0]
+  };
+
+  $formatPeriodQuarters := function($dtIni, $dtEnd, $period) {
+    (
+      $exists($dtIni) and $dtIni != "" and $exists($dtEnd) and $dtEnd != ""
+        ? (
+          $monthIni := $number($fromMillis($toMillis($dtIni), "[M01]"));
+          $monthEnd := $number($fromMillis($toMillis($dtEnd), "[M01]"));
+          $qIni := $ceil($monthIni / 3);
+          $qEnd := $ceil($monthEnd / 3);
+          $yearTwo := $fromMillis($toMillis($dtEnd), "[Y01]");
+          ($period = "MTD" or $period = "L3M")
+            ? ("Q" & $qEnd & "'" & $yearTwo)
+            : ("Q" & $qIni & "-Q" & $qEnd & "'" & $yearTwo)
+        )
+        : ""
+    )
+  };
+
+  $map($config.cards, function($card) {
+    (
+      $row := $getRowForKpi($card.kpi);
+      $hasData := $exists($row);
+
+      $hasData
+        ? {
+            "chartHeader": {
+              "title": $card.title,
+              "period": $formatPeriodQuarters($row.dt_ini, $row.dt_end, $row.period)
+            },
+            "bigNumberData": [
+              {
+                "bigNumber": {
+                  "value": $formatValue($row.ac_vs_ly),
+                  "measure": $exists($card.comp_unit_key) ? $lookup($row, $card.comp_unit_key) : "%",
+                  "trend": $lookup($config.direction, $row.variationDirectionVsLy)
+                },
+                "comparison": $config.comparison
+              }
+            ]
+          }
+        : {
+            "chartHeader": {
+              "title": $card.title,
+              "period": ""
+            },
+            "noticeMessage": $config.empty_message,
+            "bigNumberData": []
+          }
+    )
+  })
+)

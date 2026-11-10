@@ -1,0 +1,123 @@
+/* *
+ * 🏆 GROWTH LEAGUE RANKINGS DTC DASHBOARD TIER 1 FORMATTER
+ * 🎯 Component: DTC Dashboard Tier 1 Rankings
+ * 📍 Used on: Growth League > Rankings > DTC Dashboard Tier 1
+ * 🔄 Input: value-creation_growth-league_rankings_dtc-dashboard-tier-1 data
+ * 📤 Output: Formatted DTC tier 1 rankings data with flags */
+(
+  $data := $.datasources."value-creation_growth-league_rankings_dtc-dashboard";
+
+  $kpiNameMap := {
+    "overall_result": "overall_result",
+    "dtc_gmv": "dtc_gmv",
+    "digital_orders": "digital_orders",
+    "ebitda_dtc": "ebitda_dtc",
+    "consumer_nps": "consumer_nps"
+  };
+
+  $allKpiFields := [
+    "overall_result", "dtc_gmv", "digital_orders", "ebitda_dtc", "consumer_nps"
+  ];
+
+  $getCountryKey := function($row) {
+    $exists($row.raw_geography)
+      ? $row.raw_geography
+      : ($type($row.country) = "string" ? $row.country : "")
+  };
+
+  $countries := $distinct($map($data, function($row) { $getCountryKey($row) }));
+  $totalCountries := $count($countries);
+
+  $pivotedData := $map($countries, function($countryName, $idx) {
+    (
+      $countryRows := $filter($data, function($row) { $getCountryKey($row) = $countryName });
+      $firstRow := $countryRows[0];
+      $isLast := $idx = $totalCountries - 1;
+
+      $defaults := $reduce($allKpiFields, function($acc, $field) {
+        $merge([$acc, {
+          ($field): $isLast
+            ? {"tag": true, "value": "-", "borderGroupBottom": true}
+            : {"tag": true, "value": "-"}
+        }])
+      }, {});
+
+      $kpiValues := $reduce($countryRows, function($acc, $row) {
+        (
+          $mappedName := $lookup($kpiNameMap, $row.kpi_variation);
+          $fieldName := $mappedName ? $mappedName : $row.kpi_variation;
+          $isKpiValid := $type($row.score) = "number"; 
+          $unitMeasure := $isKpiValid ? "%" : "";
+          $scoreValue := $isKpiValid ? $row.score : "-";
+          $merge([$acc, {
+            ($fieldName): $isLast
+              ? 
+              {
+                "tag": true, 
+                "unitMeasure": $unitMeasure, 
+                "value": $scoreValue, 
+                "borderGroupBottom": true
+              } : 
+              {
+                "tag": true, 
+                "unitMeasure": $unitMeasure, 
+                "value": $scoreValue
+              }
+          }])
+        )
+      }, {});
+
+      $merge([
+        {
+          "rank": $isLast
+            ? {"Ranking": true, "textAlign": "center", "value": $string($firstRow.country_ranking), "borderGroupBottom": true}
+            : {"Ranking": true, "textAlign": "center", "value": $string($firstRow.country_ranking)},
+          "country": $isLast
+            ? {
+                "textAlign": "left",
+                "value": $countryName,
+                "img": $exists($firstRow.country.imageIcon) ? $firstRow.country.imageIcon : $firstRow.country_images.imageIcon,
+                "borderGroupBottom": true
+              }
+            : {
+                "textAlign": "left",
+                "value": $countryName,
+                "img": $exists($firstRow.country.imageIcon) ? $firstRow.country.imageIcon : $firstRow.country_images.imageIcon
+              }
+        },
+        $defaults,
+        $kpiValues
+      ])
+    )
+  });
+
+  $firstRow := $data[0];
+  $subtitle := $formatDateToMonth($firstRow.dt_end);
+
+  {
+    "header": [
+      {
+        "title": "Leaderboard",
+        "children": [
+          {"id": "rank", "title": "Rank"},
+          {"id": "country", "title": "Country"}
+        ]
+      },
+      {
+        "title": "DTC Dashboard",
+        "children": [
+          {"id": "overall_result", "title": "Total", "subtitle": $subtitle, "dateEndStorageKey": "overall_result_date_end"},
+          {"id": "dtc_gmv", "title": "DTC GMV (NR for PD)", "subtitle": $subtitle, "dateEndStorageKey": "dtc_gmv_date_end"},
+          {"id": "digital_orders", "title": "Digital Orders (Kegs for PD)", "subtitle": $subtitle, "dateEndStorageKey": "digital_orders_date_end"},
+          {"id": "ebitda_dtc", "title": "EBITIDA DTC", "subtitle": $subtitle, "dateEndStorageKey": "ebitida_dtc_date_end"},
+          {"id": "consumer_nps", "title": "Consumer NPS", "subtitle": $subtitle, "dateEndStorageKey": "consumer_nps_date_end"}
+        ]
+      }
+    ],
+    "rows": [[$pivotedData]],
+    "splits": [
+      ["Leaderboard"],
+      ["DTC Dashboard"]
+    ]
+  }
+)

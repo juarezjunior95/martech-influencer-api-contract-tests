@@ -1,0 +1,138 @@
+/**
+ * 🔢 PARTICIPATION PORTFOLIO FORMATTER (COUNTRY)
+ * 🎯 Component: Table
+ * 📍 Used on: Category > POS Book > Lead the Category > Country > Participation Portfolio
+ * 🔄 Input: category_pos-book_lead-the-category_country_participation-portfolio data
+ * 📤 Output: Portfolio participation table with header and rows grouped by cohort (Overall, Gender, Age, Income)
+ */
+
+(
+  $dsKey := $keys(datasources)[0];
+  $data := $lookup(datasources, $dsKey);
+  $isEmpty := $count($data) = 0;
+
+  $chartUnitMeasure := "%";
+  $variationMeasure := "pp";
+
+  $typeIds := ["total_abi", "megabrands", "expansion", "sustain", "tail"];
+  $typeTitles := ["Total ABI", "Megabrands", "Expansion", "Sustain", "Tail"];
+  $typeKeys := ["Total ABI", "Megabrands", "Expansion", "Sustain", "Tail"];
+
+  $colorDict := {
+    "total_abi": "#EEC879",
+    "megabrands": "#F0DF78",
+    "expansion": "#F6B7D0",
+    "sustain": "#A1CFF4",
+    "tail": "#B5BDF7"
+  };
+
+  $getColor := function($typeId) {
+    $lookup($colorDict, $typeId)
+  };
+
+  $getChartScaleMax := function($typeName) {
+    (
+      $typeData := $filter($data, function($item) { $item.type = $typeName });
+      $acValues := $map($typeData, function($item) { 
+        $type($item.ac) = "number" ? $item.ac : 0 
+      });
+      $validValues := $filter($acValues, function($val) { $type($val) = "number" });
+      $count($validValues) > 0 ? $max($validValues) : 100
+    )
+  };
+
+  $chartScaleMaxTotalAbi := $getChartScaleMax("Total ABI");
+  $chartScaleMaxMegabrands := $getChartScaleMax("Megabrands");
+  $chartScaleMaxExpansion := $getChartScaleMax("Expansion");
+  $chartScaleMaxSustain := $getChartScaleMax("Sustain");
+  $chartScaleMaxTail := $getChartScaleMax("Tail");
+
+  $emptyTypeData := {
+    "chartData": {
+      "data": [],
+      "backgroundColor": [],
+      "chartUnitMeasure": $chartUnitMeasure
+    },
+    "variationMeasure": ""
+  };
+
+  $buildTypeData := function($item, $typeId, $chartScaleMax) {
+    $item ? {
+      "chartData": {
+        "data": [$formatValue($item.ac)],
+        "backgroundColor": [$getColor($typeId)],
+        "chartUnitMeasure": $chartUnitMeasure
+      },
+      "variation": $formatValue($item.ac_vs_ly),
+      "variationMeasure": $variationMeasure,
+      "chartScaleMax": $chartScaleMax
+    } : $emptyTypeData
+  };
+
+  $buildRow := function($rowData, $categoryLabel) {
+    (
+      $totalAbiItem := $filter($rowData, function($item) { $item.type = "Total ABI" })[0];
+      $megabrandsItem := $filter($rowData, function($item) { $item.type = "Megabrands" })[0];
+      $expansionItem := $filter($rowData, function($item) { $item.type = "Expansion" })[0];
+      $sustainItem := $filter($rowData, function($item) { $item.type = "Sustain" })[0];
+      $tailItem := $filter($rowData, function($item) { $item.type = "Tail" })[0];
+      
+      {
+        "label": { "value": $categoryLabel },
+        "total_abi": $buildTypeData($totalAbiItem, "total_abi", $chartScaleMaxTotalAbi),
+        "megabrands": $buildTypeData($megabrandsItem, "megabrands", $chartScaleMaxMegabrands),
+        "expansion": $buildTypeData($expansionItem, "expansion", $chartScaleMaxExpansion),
+        "sustain": $buildTypeData($sustainItem, "sustain", $chartScaleMaxSustain),
+        "tail": $buildTypeData($tailItem, "tail", $chartScaleMaxTail)
+      }
+    )
+  };
+
+  $groups := [
+    { "items": ["Overall"] },
+    { "items": ["Male", "Female"] },
+    { "items": ["LDA - 24", "25-34", "35-44", "45-54", "55+"] },
+    { "items": ["High Income", "Medium Income", "Low Income"] }
+  ];
+
+  $buildRows := function() {
+    $map($groups, function($group) {
+      (
+        $groupItems := $group.items;
+
+        $map($groupItems, function($categoryLabel) {
+          (
+            $rowData := $filter($data, function($item) { $item.category = $categoryLabel });
+            
+            $count($rowData) > 0 
+              ? $buildRow($rowData, $categoryLabel)
+              : null
+          )
+        })
+      )
+    })
+  };
+
+  $labelHeader := {
+    "title": "Label",
+    "children": [
+      { "title": "Label", "id": "label" }
+    ]
+  };
+
+  $typeHeaders := $map($typeIds, function($typeId, $idx) {
+    {
+      "title": $typeTitles[$idx],
+      "id": $typeId
+    }
+  });
+
+  $header := $append([$labelHeader], $typeHeaders);
+
+  $isEmpty
+    ? { "empty": true }
+    : {
+        "rows": $buildRows(),
+        "header": $header
+      }
+)

@@ -1,0 +1,27 @@
+export declare const PERFORMANCE_TOOL_ASSET_KEY_JOINER = "|";
+export declare const PERFORMANCE_TOOL_ASSET_ATOMIC_RECORD_SEPARATOR = "|";
+export declare const PERFORMANCE_TOOL_BRAND_ASSET_KEY_JOINER = "|";
+export declare const PERFORMANCE_TOOL_SUBBRAND_ASSET_KEY_JOINER = "|";
+export declare function normalizePerformanceToolAssetKey(key: string): string;
+export declare function performanceToolAssetLogicalIdentity(key: string): string;
+export declare function isValidPerformanceToolAssetAtomicSegment(seg: string): boolean;
+export declare function splitPerformanceToolAssetKeyAtomics(mergedKey: string): string[];
+export declare function serializePerformanceToolAssetAtomics(atomics: Iterable<string>): string;
+export declare function dedupePerformanceToolAssetKeyPipeSegments(key: string): string;
+export declare function dedupeNormalizedJoinedAssetKey(mergedKey: string, _joiner: string): string;
+export declare function performanceToolAssetKeyIncludesLogical(mergedKey: string, logicalKey: string): boolean;
+export declare function canonicalPerformanceToolBrandAssetMapKey(rawKey: string, joiner?: string): string;
+export declare function stripPlaceholderBrandAssetKeysSupersededByRealImage(assets: Record<string, string>, joiner?: string): Record<string, string>;
+export declare function mergeBrandImageUrlMapsPreferringNonPlaceholder(brandFlat: Record<string, string>, subFlat: Record<string, string>, joiner?: string): Record<string, string>;
+export declare function polishGlobalAssetMapKeys(assets: Record<string, string>, joiner: string): Record<string, string>;
+export declare function isPerformanceToolPlaceholderImageUrl(url: string): boolean;
+export declare function omitPlaceholderPerformanceToolBrandAssetUrls(assets: Record<string, string>): Record<string, string>;
+export declare function mergeGlobalPerformanceToolAssetKeys(input: Record<string, string>, _keyJoiner: string): Record<string, string>;
+export declare function brandFamilyGroupToken(brandKey: string): string;
+export declare function subbrandAssetFamilyGroupToken(subKey: string): string;
+export declare function collapsePlaceholderPerformanceToolAssetKeysByFamily(assets: Record<string, string>): Record<string, string>;
+export declare function collapsePlaceholderBrandKeysByFamily(assets: Record<string, string>): Record<string, string>;
+export declare function collapsePlaceholderSubbrandKeysByFamily(assets: Record<string, string>): Record<string, string>;
+export declare function buildGlobalPerformanceToolImageAssets(enabledKpis: readonly string[], getRelationsForKpi: (kpi: string) => Record<string, unknown>): {
+    brand_assets: Record<string, string>;
+};

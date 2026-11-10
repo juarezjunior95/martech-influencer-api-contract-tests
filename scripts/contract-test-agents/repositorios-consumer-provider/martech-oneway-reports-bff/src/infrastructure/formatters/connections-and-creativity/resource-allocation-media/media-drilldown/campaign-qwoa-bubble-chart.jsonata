@@ -1,0 +1,238 @@
+(
+  /**
+   * 🎯 Component: Campaign QWOA Bubble Chart (per brand)
+   * 📍 Used on: Resource Allocation Media > Media Drilldown
+   * 🔄 Input: media-drilldown_campaign-qwoa-bubble-chart, campaigns-under-12-qwoa-campaign-qwoa-per-brand
+   * 📤 Output: campaign_qwoa { Chart, Legend }
+   * 🔧 Config: ds_keys, segments, chart (yAxis, info, caption, bubble, backgrounds, legend)
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "ds_keys": {
+      "main": "connections-and-creativity_resource-allocation-media_media-drilldown_campaign-qwoa-bubble-chart",
+      "comparison": "connections-and-creativity_resource-allocation-media_media-drilldown_campaigns-under-12-qwoa-campaign-qwoa-per-brand"
+    },
+    "chart": {
+      "yAxis": { "min": -3, "max": 70 },
+      "threshold": 12,
+      "bubble_radius": 9,
+      "info": {
+        "label": "Eixos"
+      },
+      "caption": {
+        "title": "Campaigns QWOA per Brand ",
+        "subtitle": "vs Guideline",
+        "data": { 
+          "color": "#1414148F", 
+          "unit_of_measure": "%" 
+        }        
+      },
+      "bubble": {
+        "default": "#86393980",
+        "hover": "#863939"
+      },
+      "backgrounds": [
+        { "color": "#DAB1B152", "hoverColor": "#DAB1B1" },
+        { "color": "#BCDAB452", "hoverColor": "#BCDAB4" }
+      ],
+      "legend": {
+        "border": "#14141420"
+      }
+    }
+  };
+
+
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $segments := $getSegmentColors();
+  $ds := $lookup($datasources, $config.ds_keys.main) ?: [];
+  $comparisonDs := $lookup($datasources, $config.ds_keys.comparison) ?: [];
+
+  $countries := $distinct($ds.country_iso_code_3);
+  $isCountryView := $count($countries) > 1;
+
+  $firstCountry := $count($ds) > 0 ? $ds[0].country_iso_code_3 : null;
+  $rowsByCountry := $exists($firstCountry) ? $ds[country_iso_code_3 = $firstCountry] : [];
+
+  $segmentOrder := ["Megabrands", "Expansion", "Sustain", "Tail"];
+  
+  /* Replicate frontend sorting: comparison data sorted by segment, campaign data sorted by segment */
+  $compByCountry := $comparisonDs[country_iso_code_3 = $firstCountry];
+
+  $sortedComparisonData := $isCountryView
+    ? $compByCountry
+    : $reduce($segmentOrder, function($acc, $seg) {
+        $append($acc, $compByCountry[segment = $seg])
+      }, []);
+
+  $sortedCampaignData := function($filterArray) {
+    $isCountryView
+      ? $filterArray
+      : $reduce($segmentOrder, function($acc, $seg) {
+          $append($acc, $filterArray[segment = $seg])
+        }, [])
+  };
+
+  $brandsFromComp := $distinct($ensureArray($sortedComparisonData.raw_brand));
+
+  $concatArrays := function($arrA, $arrB) {
+    $count($arrB) = 0 ? $arrA : $map([0..($count($arrA) + $count($arrB) - 1)], function($idx) {
+      $idx < $count($arrA) ? $arrA[$idx] : $arrB[$idx - $count($arrA)]
+    })
+  };
+  $brandsFromMain := $reduce($map($segmentOrder, function($seg) {
+    $distinct($ensureArray($map($rowsByCountry[segment = $seg], function($row) { $row.raw_brand })))
+  }), $concatArrays, []);
+
+  $brandsOrdered := $count($brandsFromComp) > 0 ? $brandsFromComp : $brandsFromMain;
+
+  $comparisonByBrand := $reduce($comparisonDs[country_iso_code_3 = $firstCountry], function($acc, $row) {
+    $merge([$acc, { ($row.raw_brand): $row }])
+  }, {});
+
+  $bubble := function($row) {
+    (
+      $ac := $exists($row.ac) and $type($row.ac) = "number" ? $row.ac : 0;
+      {
+        "y": $ac,
+        "r": $config.chart.bubble_radius,
+        "tooltip": $row.brand_campaign & ": " & $string($ac),
+        "backgroundColor":$config.chart.bubble.default,
+        "hoverBackgroundColor": $config.chart.bubble.hover,
+        "brandIcon": $row.brand.imageSquare,
+        "countryFlag": $row.country.imageIcon,
+        "ac": $ac
+      }
+    )
+  };
+
+  /* ─── Country View helpers ─── */
+  $bubbleCountry := function($row) {
+    (
+      $ac := $exists($row.ac) and $type($row.ac) = "number" ? $row.ac : 0;
+      {
+        "y": $ac,
+        "r": $config.chart.bubble_radius,
+        "tooltip": $row.brand_campaign,
+        "backgroundColor": $ac < $config.chart.threshold ? $config.chart.bubble.default : "#BCDAB452",
+        "hoverBackgroundColor": $ac < $config.chart.threshold ? $config.chart.bubble.hover : "#BCDAB4"
+      }
+    )
+  };
+
+  $getCountryImage := function($c) {
+    (
+      $compRow := ($comparisonDs[country_iso_code_3 = $c])[0];
+      $mainRow := ($ds[country_iso_code_3 = $c])[0];
+      $exists($compRow.country_flag) ? $compRow.country_flag
+        : $exists($mainRow.country) and $exists($mainRow.country.imageIcon) ? $mainRow.country.imageIcon
+        : null
+    )
+  };
+
+  $countryLabels := $isCountryView ? $map($countries, function($c) {
+    { "text": $c, "image": $getCountryImage($c), "portfolioColor": "" }
+  }) : [];
+
+  $comparisonByCountry := $isCountryView ? $reduce($comparisonDs, function($acc, $row) {
+    $merge([$acc, { ($row.country_iso_code_3): $row }])
+  }, {}) : {};
+
+  $countryCaptionData := $isCountryView ? $map($countries, function($c) {
+    (
+      $compRow := $lookup($comparisonByCountry, $c);
+      $val := $exists($compRow) and $exists($compRow.ac) and $type($compRow.ac) = "number" ? $compRow.ac : 0;
+      { "color": $config.chart.caption.data.color, "value": $formatNumber($val, "0.0"), "unit_of_measure": $config.chart.caption.data.unit_of_measure }
+    )
+  }) : [];
+
+  $countryDatasets := $isCountryView ? $map($countries, function($c) {
+    (
+      $cRows := $ds[country_iso_code_3 = $c];
+      $bList := $count($cRows) > 0 ? $map($cRows, function($row) { $bubbleCountry($row) }) : [];
+      $bArr := $type($bList) = "array" ? $bList : [$bList];
+      { "bubbles": $bArr }
+    )
+  }) : [];
+
+  $count($ds) = 0
+    ? { "campaign_qwoa": { "Chart": {} } }
+    : $isCountryView
+      ? {
+          "campaign_qwoa": {
+            "Chart": {
+              "yAxis": { "min": -2, "max": 12 },
+              "info": $config.chart.info,
+              "backgroundChart": {
+                "backgrounds": [
+                  { "from": -2, "to": 12, "color": $config.chart.backgrounds[0].color, "hoverColor": $config.chart.backgrounds[0].hoverColor }
+                ]
+              },
+              "label": $countryLabels,
+              "caption": {
+                "title": "Campaigns < 12 QWOA ",
+                "subtitle": "[%]",
+                "data": $countryCaptionData
+              },
+              "datasets": $countryDatasets
+            },
+            "Legend": []
+          }
+        }
+      : {
+          "campaign_qwoa": {
+            "Chart": {
+              "yAxis": $config.chart.yAxis,
+              "info": $config.chart.info,
+              "backgroundChart": {
+                "backgrounds": [
+                  { "from": $config.chart.yAxis.min, "to": $config.chart.threshold, "color": $config.chart.backgrounds[0].color, "hoverColor": $config.chart.backgrounds[0].hoverColor },
+                  { "from": $config.chart.threshold, "to": $config.chart.yAxis.max, "color": $config.chart.backgrounds[1].color, "hoverColor": $config.chart.backgrounds[1].hoverColor }
+                ]
+              },
+              "label": $ensureArray($map($brandsOrdered, function($brand) {
+                (
+                  $firstRow := ($rowsByCountry[raw_brand = $brand])[0];
+                  $segment := $exists($firstRow) ? $firstRow.segment : "Megabrands";
+                  {
+                    "text": $brand,
+                    "image": $exists($firstRow) and $exists($firstRow.brand) ? $firstRow.brand.imageTable : null,
+                    "portfolioColor": $lookup($segments, $segment) ?: $segments.Megabrands
+                  }
+                )
+              })),
+              "caption": {
+                "title": $config.chart.caption.title,
+                "subtitle": $config.chart.caption.subtitle,
+                "data": $ensureArray($map($brandsOrdered, function($brand) {
+                  (
+                    $compRow := $lookup($comparisonByBrand, $brand);
+                    $val := $exists($compRow) and $exists($compRow.ac) and $type($compRow.ac) = "number" ? $compRow.ac : 0;
+                    {
+                      "color": $config.chart.caption.data.color,
+                      "value": $formatNumber($val, "#,##0.0"),
+                      "unit_of_measure": $config.chart.caption.data.unit_of_measure
+                    }
+                  )
+                }))
+              },
+              "datasets": $ensureArray($map($brandsOrdered, function($brand) {
+                (
+                  $brandRows := $sortedCampaignData($rowsByCountry[raw_brand = $brand]);
+                  $bubbleList := $count($brandRows) > 0 ? $map($brandRows, function($row) { $bubble($row) }) : [];
+                  $bubblesArray := $type($bubbleList) = "array" ? $bubbleList : [$bubbleList];
+                  { "bubbles": $bubblesArray }
+                )
+              }))
+            },
+            "Legend": [
+              { "color": $segments.Megabrands, "pointStyle": "roundedRectangle", "label": "Megabrands", "border": $config.chart.legend.border },
+              { "color": $segments.Expansion, "pointStyle": "roundedRectangle", "label": "Expansion", "border": $config.chart.legend.border },
+              { "color": $segments.Sustain, "pointStyle": "roundedRectangle", "label": "Sustain", "border": $config.chart.legend.border },
+              { "color": $segments.Tail, "pointStyle": "roundedRectangle", "label": "Tail", "border": $config.chart.legend.border }
+            ]
+          }
+        }
+)

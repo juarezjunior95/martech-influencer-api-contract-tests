@@ -1,0 +1,171 @@
+/**
+ * 🎯 Category Health Drill-Down Big Numbers
+ * 📍 Used on: Category > Category Health > Drill Down > Big Numbers (Overtime Performance)
+ * 🔄 Input: category_category-health_drill-down_big-numbers-drill
+ * 📤 Output: OvertimePerformanceData (BigNumberCardData[])
+ */
+(
+  $config := {
+    "kpi_order": ["cat_health_volume", "cat_health_icl", "cat_health_sot", "p4w", "wmtbb"],
+    "ly_label": "L/Year",
+    "khl_label": "k hl",
+    "kpi_to_key": {
+      "cat_health_volume": "volume",
+      "cat_health_icl": "icl",
+      "cat_health_sot": "sot",
+      "p4w": "participation",
+      "wmtbb": "wmtbb"
+    },
+    "kpi_to_dataTestId": {
+      "cat_health_volume": "beer-volume",
+      "cat_health_icl": "bicl",
+      "cat_health_sot": "share-of-throat",
+      "p4w": "beer-participation",
+      "wmtbb": "wmtbb"
+    },
+    "category_card_titles": {
+      "Beer": {
+        "volume": "Beer Volume",
+        "icl": "BICL",
+        "sot": "Share of Throat",
+        "participation": "Beer Participation",
+        "wmtbb": "WMTBB"
+      },
+      "Beyond Beer": {
+        "volume": "BYB Volume",
+        "icl": "BYB ICL",
+        "sot": "Share of Throat",
+        "participation": "BYB Participation",
+        "wmtbb": "WMTBB"
+      },
+      "Beer + Beyond Beer": {
+        "volume": "B+BYB Volume",
+        "icl": "B+BYB ICL",
+        "sot": "Share of Throat",
+        "participation": "B+BYB Participation",
+        "wmtbb": "WMTBB"
+      }
+    },
+    "wmtbb_empty_message": "Choose Beer Product Type to access WMTBB data",
+    "wmtbb_country_empty_message": "Choose a country to access WMTBB data",
+    "global_iso": "ABI",
+    "participation_empty_message": "This country does not have Participation data avaliable for this period.",
+    "default_empty_message": "Data not available"
+  };
+
+  $dsKey := $keys(datasources)[0];
+  $ds := $lookup(datasources, $dsKey);
+  $rawData := $exists($ds.data) ? $ds.data : $ds;
+
+  $count($rawData) = 0
+    ? { "empty": true }
+    : (
+        $category := $rawData[0].category;
+        $countryIso := $rawData[0].country_iso_code_3;
+        $titles := $lookup($config.category_card_titles, $category);
+
+        $normalizeUnit := function($unit) {
+          $lookup({
+            "l / year": $config.ly_label,
+            "k hl": $config.khl_label
+          }, $unit) ~> function($mapped) {
+            $exists($mapped) ? $mapped : $uppercase($substring($unit, 0, 1)) & $substring($unit, 1)
+          }
+        };
+
+        $formatSecondaryMeasure := function($unit) {
+          $exists($unit) and $unit != "" ? "[ " & $normalizeUnit($unit) & " ]" : ""
+        };
+
+        $getComparisonValue := function($row) {
+          $formatFyPeriod($row.lyMonthLabel) ? $formatFyPeriod($row.lyMonthLabel) : ($formatFyPeriod($row.dt_end, "suffix") ? $formatFyPeriod($row.dt_end, "suffix") : "LY")
+        };
+
+        $isVsLyUnavailable := function($row) {
+          $not($exists($row.ac_vs_ly)) or $row.ac_vs_ly = null
+        };
+
+        $buildStandardBigNumberData := function($row, $kpiKey) {
+          (
+            $secMeasure := $formatSecondaryMeasure($row.unit_of_measure);
+            $merge([
+              {
+                "bigNumber": {
+                  "value": $formatCompactNumber($row.ac_vs_ly),
+                  "measure": $kpiKey = "wmtbb" ? "" : $row.comp_unit_of_measure,
+                  "direction": ($row.ac_vs_ly) ? $row.variationDirectionVsLy : ""
+                }
+              },
+              {
+                "comparison": {
+                  "label": "vs",
+                  "value": $getComparisonValue($row)
+                }
+              },
+              {
+                "secondaryInfo": {
+                  "value": $formatCompactNumber($row.ac),
+                  "label": $secMeasure
+                }
+              }
+            ])
+          )
+        };
+
+        $buildAbsoluteBigNumberData := function($row) {
+          (
+            $secMeasure := $formatSecondaryMeasure($row.unit_of_measure);
+            {
+              "bigNumber": {
+                "value": $formatCompactNumber($row.ac),
+                "measure": "",
+                "direction": ""
+              },
+              "secondaryInfo": {
+                "label": $secMeasure
+              }
+            }
+          )
+        };
+
+        $buildBigNumberData := function($row, $kpiKey) {
+          $isVsLyUnavailable($row) ? $buildAbsoluteBigNumberData($row) : $buildStandardBigNumberData($row, $kpiKey)
+        };
+
+        $getLatestRow := function($rows) {
+          (
+            $sorted := $sort($rows, function($a, $b) { $a.dt_end < $b.dt_end });
+            $count($sorted) > 0 ? $sorted[0] : null
+          )
+        };
+
+        $buildCard := function($kpiName) {
+          (
+            $kpiKey := $lookup($config.kpi_to_key, $kpiName);
+            $title := $lookup($titles, $kpiKey);
+            $titleResolved := $exists($title) ? $title : $kpiName;
+            $dataTestId := $lookup($config.kpi_to_dataTestId, $kpiName);
+            $kpiRows := $filter($rawData, function($r) { $r.kpi_name = $kpiName });
+            $latest := $getLatestRow($kpiRows);
+            $isWmtbbNoCategory := $kpiName = "wmtbb" and $category != "Beer";
+            $isWmtbbNoCountry := $kpiName = "wmtbb" and $category = "Beer" and ($not($exists($countryIso)) or $countryIso = "N/A" or $countryIso = $config.global_iso);
+            $isWmtbbEmpty := $isWmtbbNoCategory or $isWmtbbNoCountry;
+            $cardData := $isWmtbbEmpty ? [] : ($latest ? [$buildBigNumberData($latest, $kpiKey)] : []);
+            $emptyMsg := $count($cardData) = 0
+              ? ($isWmtbbNoCategory ? $config.wmtbb_empty_message : ($isWmtbbNoCountry ? $config.wmtbb_country_empty_message : ($kpiName = "p4w" ? $config.participation_empty_message : $config.default_empty_message)))
+              : null;
+            $base := {
+              "title": $titleResolved,
+              "kpiKey": $kpiKey,
+              "dataTestId": $dataTestId,
+              "data": $cardData
+            };
+            $exists($emptyMsg) and $emptyMsg != "" ? $merge([$base, { "emptyStateMessage": $emptyMsg }]) : $base
+          )
+        };
+
+        $map($config.kpi_order, function($kpiName) {
+          $buildCard($kpiName)
+        })
+      )
+)

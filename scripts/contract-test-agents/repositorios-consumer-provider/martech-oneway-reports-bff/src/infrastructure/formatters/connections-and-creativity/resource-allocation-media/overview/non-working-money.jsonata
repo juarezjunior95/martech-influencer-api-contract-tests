@@ -1,0 +1,85 @@
+(
+  /**
+   * 🎯 Component: Non-Working Money (total per year chart)
+   * 📍 Used on: Resource Allocation Media > Overview
+   * 🔄 Input: connections-and-creativity_resource-allocation-media_overview_non-working-money
+   * 📤 Output: non_working_money { total_per_year_full: { datasets, comparison_data, chart_legends, labels, backgroundColor } }
+   * 🔧 Config: comparison_unit_of_measure, chart_legend_suffixes, label_suffixes, background_color, striped_pattern
+   */
+
+  /* ─── Config ─── */
+  $config := {
+    "comparison_unit_of_measure": "pp",
+    "chart_legend_suffixes": { "ly": " AC YTD", "bu": " BU YTD", "curr": " AC/LE YTD" },
+    "label_suffixes": { "ly": " AC", "bu": " BU", "curr": " AC" },
+    "background_color": ["#F0D59E", "#EDCD20", "#D1A33C"],
+    "striped_pattern": {
+      "type": "striped",
+      "flags": [1],
+      "params": { "color": "white", "angle": 45, "thickness": 3, "spacing": 12 }
+    }
+  };
+
+  $datasources := $exists(components) and $count(components) > 0
+    ? components[0].data.datasources
+    : ($exists(datasources) ? datasources : {});
+  $dsKey := $keys($datasources)[0];
+  $ds := $lookup($datasources, $dsKey);
+  $data := $exists($ds.data) ? $ds.data : ($exists($ds) and $type($ds) = "array" ? $ds : []);
+
+  $count($data) = 0
+    ? { "non_working_money": { "empty": true } }
+    : (
+      $row := $data[0];
+      $lyLabel := $exists($row.lyMonthLabel) ? $row.lyMonthLabel : $formatDateToMonth($string($row.dt_ini));
+      $lyShortYear := $split($lyLabel, "'")[1];
+      $lyFullYear := "20" & $lyShortYear;
+      $currLabel := $exists($row.refreshMonthLabel) ? $row.refreshMonthLabel : $formatDateToMonth($string($row.dt_end));
+      $currShortYear := $split($currLabel, "'")[1];
+      $currFullYear := "20" & $currShortYear;
+      $compDirection := $exists($row.ac_vs_ly) and $type($row.ac_vs_ly) = "number" and $row.ac_vs_ly < 0
+        ? "up"
+        : "down";
+      $comparison := $exists($row.ac_vs_ly) and $type($row.ac_vs_ly) = "number"
+        ? $row.ac_vs_ly
+        : 0;
+      $lyVal := $safeNumber($row.ly);
+      $buVal := $safeNumber($row.bu);
+      $acVal := $safeNumber($row.ac);
+      $formatPct := function($val) { $string($round($val, 1)) & "%" };
+      {
+        "non_working_money": {
+          "total_per_year_full": {
+            "datasets": [
+              {
+                "data": [$lyVal, $buVal, $acVal],
+                "formattedData": [
+                  [$formatPct($lyVal)],
+                  [$formatPct($buVal)],
+                  [$formatPct($acVal)]
+                ],
+                "pattern": $config.striped_pattern
+              }
+            ],
+            "comparison_data": {
+              "comparison": $comparison,
+              "unit_of_measure": $config.comparison_unit_of_measure,
+              "direction": $compDirection
+            },
+            "chart_legends": [
+              $lyFullYear & $config.chart_legend_suffixes.ly,
+              $currFullYear & $config.chart_legend_suffixes.bu,
+              $currFullYear & $config.chart_legend_suffixes.curr
+            ],
+            "comparison_unit_of_measure": [$config.comparison_unit_of_measure],
+            "labels": [
+              $lyShortYear & $config.label_suffixes.ly,
+              $currShortYear & $config.label_suffixes.bu,
+              $currShortYear & $config.label_suffixes.curr
+            ],
+            "backgroundColor": $config.background_color
+          }
+        }
+      }
+    )
+)

@@ -1,0 +1,114 @@
+(
+  $data := $ensureArray(datasources.bigNumbers);
+  $periods := ["YTD", "LQ"];
+
+  $tone := function($value, $direction) {
+    ($not($exists($value)) or $value = null) ? "neutral" :
+    $exists($direction)
+      ? ($lowercase($direction) = "up" ? "positive" : "negative")
+      : ($value > 0 ? "positive" : "negative")
+  };
+
+  $matchesPeriod := function($row, $period) {
+    (
+      $raw := $uppercase($row.period_type ? $row.period_type : $row.period);
+      $period = "LQ"
+        ? ($contains($raw, "LQ") or $contains($raw, "QTD"))
+        : $contains($raw, $period)
+    )
+  };
+
+  $formatPeriodSuffix := function($period) {
+    (
+      $normalized := $exists($period) ? $uppercase($period) : "";
+      $normalized = "YTD" or $normalized = "MTD" or $normalized = "L3M" or $normalized = "LQ"
+        ? $normalized
+        : ""
+    )
+  };
+
+  $formatPeriodLabel := function($dtEnd, $period, $isQuarter) {
+    (
+      $periodSuffix := $formatPeriodSuffix($period);
+      $exists($dtEnd) and $dtEnd != ""
+        ? (
+          $datePart := $isQuarter ? $formatDateToQuarter($dtEnd) : $formatDateToMonth($dtEnd);
+          $periodSuffix != "" ? $datePart & " " & $periodSuffix : $datePart
+        )
+        : ($periodSuffix != "" ? $periodSuffix : "-")
+    )
+  };
+
+  $formatPeriodRange := function($dtIni, $dtEnd) {
+    (
+      $exists($dtIni) and $dtIni != "" and $exists($dtEnd) and $dtEnd != ""
+        ? (
+          $start := $fromMillis($toMillis($dtIni), "[MNn,*-3]");
+          $end := $fromMillis($toMillis($dtEnd), "[MNn,*-3]'[Y01]");
+          $sameMonth := $fromMillis($toMillis($dtIni), "[Y01][M01]") = $fromMillis($toMillis($dtEnd), "[Y01][M01]");
+          $sameMonth ? $end : ($start & "-" & $end)
+        )
+        : "-"
+    )
+  };
+
+  $formatHeaderTag := function($row, $period, $isQuarter) {
+    (
+      $normalizedPeriod := $exists($period) ? $uppercase($period) : "";
+      $useRange := ($normalizedPeriod = "YTD" or $normalizedPeriod = "L3M") and $not($isQuarter);
+      $useRange
+        ? ($formatPeriodRange($row.dt_ini, $row.dt_end) & " " & $normalizedPeriod)
+        : $formatPeriodLabel($row.dt_end, $period, $isQuarter)
+    )
+  };
+
+  $chip := function($row, $period) {
+    $formatHeaderTag($row, $period, true)
+  };
+
+  $delta := function($row) {
+    $exists($row.variation_vs_ly) ? $row.variation_vs_ly : $row.ac_vs_ly
+  };
+
+  $buildCard := function($period) {
+    (
+      $row := $filter($data, function($item) { $matchesPeriod($item, $period) })[0];
+      $exists($row)
+        ? {
+            "id": $lowercase($period),
+            "periodLabel": $period,
+            "periodChipLabel": $chip($row, $period),
+            "absoluteValue": $formatValue($row.value),
+            "deltas": [
+              {
+                "formattedValue": $formatPercentValue($delta($row), $row.comp_unit_of_measure ? $row.comp_unit_of_measure : "pp"),
+                "comparisonLabel": "LY",
+                "tone": $tone($delta($row), $row.variation_direction_vs_ly)
+              }
+            ]
+          }
+        : {
+            "id": $lowercase($period),
+            "periodLabel": $period,
+            "periodChipLabel": "",
+            "deltas": []
+          }
+    )
+  };
+
+  $firstRow := $count($data) > 0 ? $data[0] : {};
+  $hasData := $count($data) > 0;
+
+  $base := {
+    "chartHeader": {
+      "title": "Brand Power",
+      "period": $exists($firstRow.dt_end) ? $formatDateToQuarter($firstRow.dt_end) : "",
+      "periodChip": $exists($firstRow.period_type) ? $firstRow.period_type : ""
+    },
+    "cards": $map($periods, $buildCard)
+  };
+
+  $hasData
+    ? $base
+    : $merge([$base, { "noticeMessage": "Data not available" }])
+)

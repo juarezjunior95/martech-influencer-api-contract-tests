@@ -1,0 +1,1 @@
+export { TableFooterExample } from './TableFooterExample';

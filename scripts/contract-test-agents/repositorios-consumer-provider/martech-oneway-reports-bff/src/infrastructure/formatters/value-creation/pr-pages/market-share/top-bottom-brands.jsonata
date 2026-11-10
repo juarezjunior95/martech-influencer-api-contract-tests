@@ -1,0 +1,124 @@
+/* *
+ * 🔢 Top/Bottom Brands (Market Share)
+ * 🎯 Component: HorizontalBarChart with brand avatars
+ * 📍 Used on: Value Creation > PR Pages > Market Share > Top/Bottom Brands
+ * 🔄 Input: value-creation_pr-pages_market-share_top-bottom-brands
+ * 📤 Output: Bar chart with labels, datasets, brandsAvatar and comparisonLine (vs LY → measure pp; Vol. vs LY → %)
+ */
+(
+  $datasourceName := "value-creation_pr-pages_market-share_top-bottom-brands";
+  $data := $lookup(datasources, $datasourceName);
+
+  $config := {
+    "unitMeasure": "%",
+    "directionColors": {
+      "up": "#49764B",
+      "down": "#A20A0A"
+    },
+    "comparisons": [
+      {
+        "title": "vs LY",
+        "attribute": "ac_vs_ly",
+        "withColor": true,
+        "measure": "pp"
+      },
+      {
+        "title": "Vol. vs LY",
+        "attribute": "vol_og_ly",
+        "withSignedTrend": true,
+        "measure": "%"
+      }
+    ]
+  };
+
+  $isEmpty := $count($data) = 0;
+
+  $isValidNumber := function($value) { $type($value) = "number" };
+
+  $getDirectionColor := function($direction) {
+    $lookup($config.directionColors, $direction)
+  };
+
+  $enrichComparisonCell := function($baseItem, $item, $comparison, $value) {
+    (
+      $withTrend := $comparison.withSignedTrend
+        ? $merge([$baseItem, { "trend": $value >= 0 ? "positive" : "negative" }])
+        : $baseItem;
+      $comparison.withColor
+        ? $merge([$withTrend, { "color": $getDirectionColor($item.variationDirectionVsLy) }])
+        : $withTrend
+    )
+  };
+
+  $buildComparisonItem := function($item, $comparison) {
+    (
+      $measure := $exists($comparison.measure) ? $comparison.measure : $config.unitMeasure;
+      $value := $lookup($item, $comparison.attribute);
+      $isValidNumber($value)
+        ? (
+          $baseItem := {
+            "value": $formatNumber($value, "#,##0.0"),
+            "measure": $measure
+          };
+          $enrichComparisonCell($baseItem, $item, $comparison, $value)
+        )
+        : { "value": "-", "measure": "" }
+    )
+  };
+
+  $labels := $map($data, function($item) { $item.country_iso_code_3 });
+
+  $dataValues := $map($data, function($item) {
+    $isValidNumber($item.ac) ? $item.ac : 0
+  });
+
+  $backgroundColors := $map($data, function($item) {
+    $getDirectionColor($item.variationDirectionVsLy)
+  });
+
+  $formattedValues := $map($data, function($item) {
+    $isValidNumber($item.ac)
+      ? $formatNumber($abs($item.ac), "#,##0.0")
+      : "-"
+  });
+
+  $brandsAvatarData := $map($data, function($item) {
+    {
+      "title": $item.raw_brand,
+      "mainBrand": {
+        "src": $item.brand.imageSquare,
+        "alt": $item.raw_brand & " FLAG"
+      },
+      "badgeFlag": {
+        "src": $item.country.imageIcon,
+        "alt": $item.country_iso_code_3 & " FLAG"
+      },
+      "description": $item.country_iso_code_3
+    }
+  });
+
+  $comparisonLines := $map($config.comparisons, function($comparison) {
+    {
+      "title": $comparison.title,
+      "data": $map($data, function($item) {
+        $buildComparisonItem($item, $comparison)
+      })
+    }
+  });
+
+  $isEmpty
+    ? { "empty": true }
+    : {
+        "period": $data[0].period_type,
+        "datasets": [
+          {
+            "data": $dataValues,
+            "backgroundColor": $backgroundColors
+          }
+        ],
+        "labels": $labels,
+        "formattedData": [[$formattedValues]],
+        "brandsAvatar": { "data": $brandsAvatarData },
+        "comparisonLine": { "data": $comparisonLines }
+      }
+)

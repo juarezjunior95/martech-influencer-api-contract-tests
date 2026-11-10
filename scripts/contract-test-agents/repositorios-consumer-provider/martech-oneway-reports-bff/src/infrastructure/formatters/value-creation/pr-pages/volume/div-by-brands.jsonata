@@ -1,0 +1,252 @@
+/* *
+ * 🔢 Bar charts (v2)
+ * 🎯 Component: Bar
+ * 📍 Used on: Volume Pages (country level)
+ * 🔄 Input: datasource (portfolio Megabrands|Expansion|Sustain|Tail|Total; MTD'/YTD' anchors; period on each row)
+ * 📊 Order: LY anchor → brands by portfolio (Megabrands→…→Tail) → CY anchor
+ * 📤 Output: Bar chart — MTD anchors: $formatDateToMonth(dt_end); YTD anchors: YTD'YY derived from dt_end */
+(
+  $ds := $keys($.datasources)[0];
+  $segmentColors := $getSegmentColors();
+  $legend := $append(
+    [
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "color": "#49764B"
+      },
+      {
+        "label": "Δ Vol.",
+        "shape": "square",
+        "color": "#A20A0A"
+      }
+    ],
+    [
+      {
+        "label": "Megabrands",
+        "shape": "thinPill",
+        "color": $lookup($segmentColors, "Megabrands")
+      },
+      {
+        "label": "Expansion",
+        "shape": "thinPill",
+        "color": $lookup($segmentColors, "Expansion")
+      },
+      {
+        "label": "Sustain",
+        "shape": "thinPill",
+        "color": $lookup($segmentColors, "Sustain")
+      },
+      {
+        "label": "Tail",
+        "shape": "thinPill",
+        "color": $lookup($segmentColors, "Tail")
+      }
+    ]
+  );
+
+  $rawData := $.datasources.$lookup($ds);
+  $isEurChart := $rawData[0].zone = "EUR" and $rawData[0].country_iso_code_3 = "EUR";
+
+  $isVolumeRow := function($row) {
+    $not($exists($row.kpi_name))
+      or $row.kpi_name = null
+      or $string($row.kpi_name) = ""
+      or $row.kpi_name = "volume"
+  };
+
+  $filtered := $filter($rawData, function($row) { $isVolumeRow($row) });
+  $empty := $count($filtered) = 0;
+
+  $isValidNumber := function($val) { $type($val) = "number" };
+
+  $normalizeText := function($value) {
+    $type($value) = "string" ? $lowercase($value) : ""
+  };
+  $othersAggregateValues := ["others", "other", "global"];
+  $isOthersAggregateValue := function($value) {
+    $count($othersAggregateValues[$ = $value]) > 0
+  };
+
+  $isPeriodAnchor := function($row) {
+    $row.step_name = $row.raw_brand
+      and ($contains($row.step_name, "MTD'") or $contains($row.step_name, "YTD'"))
+  };
+  $isOpeningAnchor := function($row) {
+    $isPeriodAnchor($row) and $contains($row.step_name, "'25")
+  };
+
+  $portfolioSequence := ["Megabrands", "Expansion", "Sustain", "Tail"];
+  $openingRows := $filter($filtered, function($r) {
+    $isPeriodAnchor($r) and $contains($r.step_name, "'25")
+  });
+  $closingRows := $filter($filtered, function($r) {
+    $isPeriodAnchor($r) and $contains($r.step_name, "'26")
+  });
+  $middleRows := $filter($filtered, function($r) { $not($isPeriodAnchor($r)) });
+  $middleByPortfolio := $reduce(
+    $portfolioSequence,
+    function($acc, $seg) {
+      $append($acc, $filter($middleRows, function($r) { $r.portfolio = $seg }))
+    },
+    []
+  );
+  $middleUnknown := $filter(
+    $middleRows,
+    function($r) {
+      $count($filter($portfolioSequence, function($s) { $s = $r.portfolio })) = 0
+    }
+  );
+  $middleSorted := $append($middleByPortfolio, $middleUnknown);
+  $ordered := $append($append($openingRows, $middleSorted), $closingRows);
+
+  $anchorDisplayLabel := function($row) {
+    $exists($row.dt_end) and $string($row.dt_end) != ""
+      ? (
+        $dtStr := $string($row.dt_end);
+        $contains($row.step_name, "YTD'")
+          ? (
+            $match($dtStr, /^\d{4}-\d{2}-\d{2}/)
+              ? "YTD'" & $substring($dtStr, 2, 2)
+              : "-"
+          )
+          : $formatDateToMonth($row.dt_end)
+      )
+      : $row.step_name
+  };
+
+  $isAggregateAvatar := function($row) {
+    (
+      $rb := $normalizeText($row.raw_brand);
+      $sc := $normalizeText($row.country_iso_code_3);
+      $isOthersSpecific := $contains($lowercase($trim($row.raw_brand)), "others");
+      $isOthersAggregateValue($rb)
+        or $isOthersAggregateValue($sc)
+        or $isOthersSpecific
+        or $rb = "tail"
+    )
+  };
+
+  $vsLyCell := function($row) {
+    $isOpeningAnchor($row)
+      ? { "value": "" }
+      : (
+        $v := $row.ac_vs_ly;
+        $not($exists($v)) or $type($v) = "null"
+          ? {
+            "value": "-"
+          }
+          : {
+            "value": $isValidNumber($v) ? $formatValue($v) : $string($v),
+            "measure": "%",
+            "trend": $getTrend($v, $row.variationDirectionVsLy)
+          }
+      )
+  };
+
+  $vsBuCell := function($row) {
+    $isOpeningAnchor($row)
+      ? { "value": "" }
+      : (
+        $v := $row.ac_vs_bu;
+        $not($exists($v)) or $type($v) = "null"
+          ? {
+            "value": "-"
+          }
+          : {
+            "value": $isValidNumber($v) ? $formatValue($v) : $string($v),
+            "measure": "%",
+            "trend": $getTrend($v, $row.variationDirectionVsBu)
+          }
+      )
+  };
+
+  $comparisonLines := [
+    { "title": "vs LY", "data": $map($ordered, function($r) { $vsLyCell($r) }) },
+    { "title": "vs BU", "data": $map($ordered, function($r) { $vsBuCell($r) }) }
+  ];
+
+  $datasetData := $map(
+    $ordered,
+    function($row) {
+      $isValidNumber($row.ac) ? $row.ac : 0
+    }
+  );
+
+  $formattedData := $map($datasetData, function($n) { $formatCompactNumber($n) });
+
+  $labels := $map(
+    $ordered,
+    function($row) {
+      $isPeriodAnchor($row) ? $anchorDisplayLabel($row) : $row.step_name
+    }
+  );
+
+  $avatars := $map(
+    $ordered,
+    function($row) {(
+      $isRowForGlobalEurChart := $row.country_iso_code_3 = "ABI" or $isEurChart;
+      $isPeriodAnchor($row)
+        ? {
+          "title": $anchorDisplayLabel($row),
+          "mainBrand": {
+            "src": $row.country.imageIcon,
+            "alt": $row.country_iso_code_3 & " FLAG"
+          }
+        }
+        : $isAggregateAvatar($row)
+          ? {
+            "title": $row.step_name,
+            "mainBrand": {
+              "src": $row.brand.imageSquare,
+              "alt": $row.raw_brand & " " & $row.raw_brand
+            }
+          }
+          : $merge([
+            {
+              "title": $isRowForGlobalEurChart ? $row.raw_brand : $row.step_name,
+              "mainBrand": {
+                "src": $row.brand.imageSquare,
+                "alt": $row.raw_brand & " " & $row.country_iso_code_3
+              }
+            },
+            $isRowForGlobalEurChart
+              ? {
+                "description": $row.country_iso_code_3,
+                "badgeFlag": {
+                  "src": $row.country.imageIcon,
+                  "alt": $row.country_iso_code_3 & " FLAG"
+                }
+              }
+              : {}
+          ])
+    )}
+  );
+
+  $isTotalPortfolio := function($p) {
+    $exists($p) and $lowercase($string($p)) = "total"
+  };
+  $baseChartColorsData := $map(
+    $ordered,
+    function($row) {
+      $not($exists($row.portfolio)) or $type($row.portfolio) = "null"
+        ? null
+        : $isTotalPortfolio($row.portfolio)
+          ? null
+          : $row.portfolio
+    }
+  );
+
+  $empty
+    ? { "empty": true }
+    : {
+      "period": $ordered[0].period,
+      "values": $datasetData,
+      "formattedData": [[$formattedData]],
+      "labels": $labels,
+      "brandsAvatar": { "data": $avatars },
+      "baseChartColors": [$baseChartColorsData],
+      "comparisonLine": { "data": $comparisonLines },
+      "legend": $legend
+    }
+)

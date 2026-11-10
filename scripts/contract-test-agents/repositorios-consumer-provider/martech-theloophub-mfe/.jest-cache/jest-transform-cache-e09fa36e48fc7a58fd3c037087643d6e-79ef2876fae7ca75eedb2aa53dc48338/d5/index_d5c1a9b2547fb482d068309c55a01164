@@ -1,0 +1,330 @@
+a06ec03511e561a9a171f03f45cd3666
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+Object.defineProperty(exports, "CONTINUE", {
+  enumerable: true,
+  get: function () {
+    return _unistUtilVisitParents.CONTINUE;
+  }
+});
+Object.defineProperty(exports, "EXIT", {
+  enumerable: true,
+  get: function () {
+    return _unistUtilVisitParents.EXIT;
+  }
+});
+Object.defineProperty(exports, "SKIP", {
+  enumerable: true,
+  get: function () {
+    return _unistUtilVisitParents.SKIP;
+  }
+});
+exports.visit = visit;
+var _unistUtilVisitParents = require("unist-util-visit-parents");
+/**
+ * @import {Node as UnistNode, Parent as UnistParent} from 'unist'
+ * @import {VisitorResult} from 'unist-util-visit-parents'
+ */
+
+/**
+ * @typedef {Exclude<import('unist-util-is').Test, undefined> | undefined} Test
+ *   Test from `unist-util-is`.
+ *
+ *   Note: we have remove and add `undefined`, because otherwise when generating
+ *   automatic `.d.ts` files, TS tries to flatten paths from a local perspective,
+ *   which doesn’t work when publishing on npm.
+ */
+
+// To do: use types from `unist-util-visit-parents` when it’s released.
+
+/**
+ * @typedef {(
+ *   Fn extends (value: any) => value is infer Thing
+ *   ? Thing
+ *   : Fallback
+ * )} Predicate
+ *   Get the value of a type guard `Fn`.
+ * @template Fn
+ *   Value; typically function that is a type guard (such as `(x): x is Y`).
+ * @template Fallback
+ *   Value to yield if `Fn` is not a type guard.
+ */
+
+/**
+ * @typedef {(
+ *   Check extends null | undefined // No test.
+ *   ? Value
+ *   : Value extends {type: Check} // String (type) test.
+ *   ? Value
+ *   : Value extends Check // Partial test.
+ *   ? Value
+ *   : Check extends Function // Function test.
+ *   ? Predicate<Check, Value> extends Value
+ *     ? Predicate<Check, Value>
+ *     : never
+ *   : never // Some other test?
+ * )} MatchesOne
+ *   Check whether a node matches a primitive check in the type system.
+ * @template Value
+ *   Value; typically unist `Node`.
+ * @template Check
+ *   Value; typically `unist-util-is`-compatible test, but not arrays.
+ */
+
+/**
+ * @typedef {(
+ *   Check extends ReadonlyArray<any>
+ *   ? MatchesOne<Value, Check[number]>
+ *   : MatchesOne<Value, Check>
+ * )} Matches
+ *   Check whether a node matches a check in the type system.
+ * @template Value
+ *   Value; typically unist `Node`.
+ * @template Check
+ *   Value; typically `unist-util-is`-compatible test.
+ */
+
+/**
+ * @typedef {0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10} Uint
+ *   Number; capped reasonably.
+ */
+
+/**
+ * @typedef {I extends 0 ? 1 : I extends 1 ? 2 : I extends 2 ? 3 : I extends 3 ? 4 : I extends 4 ? 5 : I extends 5 ? 6 : I extends 6 ? 7 : I extends 7 ? 8 : I extends 8 ? 9 : 10} Increment
+ *   Increment a number in the type system.
+ * @template {Uint} [I=0]
+ *   Index.
+ */
+
+/**
+ * @typedef {(
+ *   Node extends UnistParent
+ *   ? Node extends {children: Array<infer Children>}
+ *     ? Child extends Children ? Node : never
+ *     : never
+ *   : never
+ * )} InternalParent
+ *   Collect nodes that can be parents of `Child`.
+ * @template {UnistNode} Node
+ *   All node types in a tree.
+ * @template {UnistNode} Child
+ *   Node to search for.
+ */
+
+/**
+ * @typedef {InternalParent<InclusiveDescendant<Tree>, Child>} Parent
+ *   Collect nodes in `Tree` that can be parents of `Child`.
+ * @template {UnistNode} Tree
+ *   All node types in a tree.
+ * @template {UnistNode} Child
+ *   Node to search for.
+ */
+
+/**
+ * @typedef {(
+ *   Depth extends Max
+ *   ? never
+ *   :
+ *     | InternalParent<Node, Child>
+ *     | InternalAncestor<Node, InternalParent<Node, Child>, Max, Increment<Depth>>
+ * )} InternalAncestor
+ *   Collect nodes in `Tree` that can be ancestors of `Child`.
+ * @template {UnistNode} Node
+ *   All node types in a tree.
+ * @template {UnistNode} Child
+ *   Node to search for.
+ * @template {Uint} [Max=10]
+ *   Max; searches up to this depth.
+ * @template {Uint} [Depth=0]
+ *   Current depth.
+ */
+
+/**
+ * @typedef {(
+ *   Tree extends UnistParent
+ *     ? Depth extends Max
+ *       ? Tree
+ *       : Tree | InclusiveDescendant<Tree['children'][number], Max, Increment<Depth>>
+ *     : Tree
+ * )} InclusiveDescendant
+ *   Collect all (inclusive) descendants of `Tree`.
+ *
+ *   > 👉 **Note**: for performance reasons, this seems to be the fastest way to
+ *   > recurse without actually running into an infinite loop, which the
+ *   > previous version did.
+ *   >
+ *   > Practically, a max of `2` is typically enough assuming a `Root` is
+ *   > passed, but it doesn’t improve performance.
+ *   > It gets higher with `List > ListItem > Table > TableRow > TableCell`.
+ *   > Using up to `10` doesn’t hurt or help either.
+ * @template {UnistNode} Tree
+ *   Tree type.
+ * @template {Uint} [Max=10]
+ *   Max; searches up to this depth.
+ * @template {Uint} [Depth=0]
+ *   Current depth.
+ */
+
+/**
+ * @callback Visitor
+ *   Handle a node (matching `test`, if given).
+ *
+ *   Visitors are free to transform `node`.
+ *   They can also transform `parent`.
+ *
+ *   Replacing `node` itself, if `SKIP` is not returned, still causes its
+ *   descendants to be walked (which is a bug).
+ *
+ *   When adding or removing previous siblings of `node` (or next siblings, in
+ *   case of reverse), the `Visitor` should return a new `Index` to specify the
+ *   sibling to traverse after `node` is traversed.
+ *   Adding or removing next siblings of `node` (or previous siblings, in case
+ *   of reverse) is handled as expected without needing to return a new `Index`.
+ *
+ *   Removing the children property of `parent` still results in them being
+ *   traversed.
+ * @param {Visited} node
+ *   Found node.
+ * @param {Visited extends UnistNode ? number | undefined : never} index
+ *   Index of `node` in `parent`.
+ * @param {Ancestor extends UnistParent ? Ancestor | undefined : never} parent
+ *   Parent of `node`.
+ * @returns {VisitorResult}
+ *   What to do next.
+ *
+ *   An `Index` is treated as a tuple of `[CONTINUE, Index]`.
+ *   An `Action` is treated as a tuple of `[Action]`.
+ *
+ *   Passing a tuple back only makes sense if the `Action` is `SKIP`.
+ *   When the `Action` is `EXIT`, that action can be returned.
+ *   When the `Action` is `CONTINUE`, `Index` can be returned.
+ * @template {UnistNode} [Visited=UnistNode]
+ *   Visited node type.
+ * @template {UnistParent} [Ancestor=UnistParent]
+ *   Ancestor type.
+ */
+
+/**
+ * @typedef {Visitor<Visited, Parent<Ancestor, Visited>>} BuildVisitorFromMatch
+ *   Build a typed `Visitor` function from a node and all possible parents.
+ *
+ *   It will infer which values are passed as `node` and which as `parent`.
+ * @template {UnistNode} Visited
+ *   Node type.
+ * @template {UnistParent} Ancestor
+ *   Parent type.
+ */
+
+/**
+ * @typedef {(
+ *   BuildVisitorFromMatch<
+ *     Matches<Descendant, Check>,
+ *     Extract<Descendant, UnistParent>
+ *   >
+ * )} BuildVisitorFromDescendants
+ *   Build a typed `Visitor` function from a list of descendants and a test.
+ *
+ *   It will infer which values are passed as `node` and which as `parent`.
+ * @template {UnistNode} Descendant
+ *   Node type.
+ * @template {Test} Check
+ *   Test type.
+ */
+
+/**
+ * @typedef {(
+ *   BuildVisitorFromDescendants<
+ *     InclusiveDescendant<Tree>,
+ *     Check
+ *   >
+ * )} BuildVisitor
+ *   Build a typed `Visitor` function from a tree and a test.
+ *
+ *   It will infer which values are passed as `node` and which as `parent`.
+ * @template {UnistNode} [Tree=UnistNode]
+ *   Node type.
+ * @template {Test} [Check=Test]
+ *   Test type.
+ */
+
+/**
+ * Visit nodes.
+ *
+ * This algorithm performs *depth-first* *tree traversal* in *preorder*
+ * (**NLR**) or if `reverse` is given, in *reverse preorder* (**NRL**).
+ *
+ * You can choose for which nodes `visitor` is called by passing a `test`.
+ * For complex tests, you should test yourself in `visitor`, as it will be
+ * faster and will have improved type information.
+ *
+ * Walking the tree is an intensive task.
+ * Make use of the return values of the visitor when possible.
+ * Instead of walking a tree multiple times, walk it once, use `unist-util-is`
+ * to check if a node matches, and then perform different operations.
+ *
+ * You can change the tree.
+ * See `Visitor` for more info.
+ *
+ * @overload
+ * @param {Tree} tree
+ * @param {Check} check
+ * @param {BuildVisitor<Tree, Check>} visitor
+ * @param {boolean | null | undefined} [reverse]
+ * @returns {undefined}
+ *
+ * @overload
+ * @param {Tree} tree
+ * @param {BuildVisitor<Tree>} visitor
+ * @param {boolean | null | undefined} [reverse]
+ * @returns {undefined}
+ *
+ * @param {UnistNode} tree
+ *   Tree to traverse.
+ * @param {Visitor | Test} testOrVisitor
+ *   `unist-util-is`-compatible test (optional, omit to pass a visitor).
+ * @param {Visitor | boolean | null | undefined} [visitorOrReverse]
+ *   Handle each node (when test is omitted, pass `reverse`).
+ * @param {boolean | null | undefined} [maybeReverse=false]
+ *   Traverse in reverse preorder (NRL) instead of the default preorder (NLR).
+ * @returns {undefined}
+ *   Nothing.
+ *
+ * @template {UnistNode} Tree
+ *   Node type.
+ * @template {Test} Check
+ *   `unist-util-is`-compatible test.
+ */
+function visit(tree, testOrVisitor, visitorOrReverse, maybeReverse) {
+  /** @type {boolean | null | undefined} */
+  let reverse;
+  /** @type {Test} */
+  let test;
+  /** @type {Visitor} */
+  let visitor;
+  if (typeof testOrVisitor === 'function' && typeof visitorOrReverse !== 'function') {
+    test = undefined;
+    visitor = testOrVisitor;
+    reverse = visitorOrReverse;
+  } else {
+    // @ts-expect-error: assume the overload with test was given.
+    test = testOrVisitor;
+    // @ts-expect-error: assume the overload with test was given.
+    visitor = visitorOrReverse;
+    reverse = maybeReverse;
+  }
+  (0, _unistUtilVisitParents.visitParents)(tree, test, overload, reverse);
+
+  /**
+   * @param {UnistNode} node
+   * @param {Array<UnistParent>} parents
+   */
+  function overload(node, parents) {
+    const parent = parents[parents.length - 1];
+    const index = parent ? parent.children.indexOf(node) : undefined;
+    return visitor(node, index, parent);
+  }
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJ2ZXJzaW9uIjozLCJuYW1lcyI6WyJfdW5pc3RVdGlsVmlzaXRQYXJlbnRzIiwicmVxdWlyZSIsInZpc2l0IiwidHJlZSIsInRlc3RPclZpc2l0b3IiLCJ2aXNpdG9yT3JSZXZlcnNlIiwibWF5YmVSZXZlcnNlIiwicmV2ZXJzZSIsInRlc3QiLCJ2aXNpdG9yIiwidW5kZWZpbmVkIiwidmlzaXRQYXJlbnRzIiwib3ZlcmxvYWQiLCJub2RlIiwicGFyZW50cyIsInBhcmVudCIsImxlbmd0aCIsImluZGV4IiwiY2hpbGRyZW4iLCJpbmRleE9mIl0sInNvdXJjZXMiOlsiaW5kZXguanMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBAaW1wb3J0IHtOb2RlIGFzIFVuaXN0Tm9kZSwgUGFyZW50IGFzIFVuaXN0UGFyZW50fSBmcm9tICd1bmlzdCdcbiAqIEBpbXBvcnQge1Zpc2l0b3JSZXN1bHR9IGZyb20gJ3VuaXN0LXV0aWwtdmlzaXQtcGFyZW50cydcbiAqL1xuXG4vKipcbiAqIEB0eXBlZGVmIHtFeGNsdWRlPGltcG9ydCgndW5pc3QtdXRpbC1pcycpLlRlc3QsIHVuZGVmaW5lZD4gfCB1bmRlZmluZWR9IFRlc3RcbiAqICAgVGVzdCBmcm9tIGB1bmlzdC11dGlsLWlzYC5cbiAqXG4gKiAgIE5vdGU6IHdlIGhhdmUgcmVtb3ZlIGFuZCBhZGQgYHVuZGVmaW5lZGAsIGJlY2F1c2Ugb3RoZXJ3aXNlIHdoZW4gZ2VuZXJhdGluZ1xuICogICBhdXRvbWF0aWMgYC5kLnRzYCBmaWxlcywgVFMgdHJpZXMgdG8gZmxhdHRlbiBwYXRocyBmcm9tIGEgbG9jYWwgcGVyc3BlY3RpdmUsXG4gKiAgIHdoaWNoIGRvZXNu4oCZdCB3b3JrIHdoZW4gcHVibGlzaGluZyBvbiBucG0uXG4gKi9cblxuLy8gVG8gZG86IHVzZSB0eXBlcyBmcm9tIGB1bmlzdC11dGlsLXZpc2l0LXBhcmVudHNgIHdoZW4gaXTigJlzIHJlbGVhc2VkLlxuXG4vKipcbiAqIEB0eXBlZGVmIHsoXG4gKiAgIEZuIGV4dGVuZHMgKHZhbHVlOiBhbnkpID0+IHZhbHVlIGlzIGluZmVyIFRoaW5nXG4gKiAgID8gVGhpbmdcbiAqICAgOiBGYWxsYmFja1xuICogKX0gUHJlZGljYXRlXG4gKiAgIEdldCB0aGUgdmFsdWUgb2YgYSB0eXBlIGd1YXJkIGBGbmAuXG4gKiBAdGVtcGxhdGUgRm5cbiAqICAgVmFsdWU7IHR5cGljYWxseSBmdW5jdGlvbiB0aGF0IGlzIGEgdHlwZSBndWFyZCAoc3VjaCBhcyBgKHgpOiB4IGlzIFlgKS5cbiAqIEB0ZW1wbGF0ZSBGYWxsYmFja1xuICogICBWYWx1ZSB0byB5aWVsZCBpZiBgRm5gIGlzIG5vdCBhIHR5cGUgZ3VhcmQuXG4gKi9cblxuLyoqXG4gKiBAdHlwZWRlZiB7KFxuICogICBDaGVjayBleHRlbmRzIG51bGwgfCB1bmRlZmluZWQgLy8gTm8gdGVzdC5cbiAqICAgPyBWYWx1ZVxuICogICA6IFZhbHVlIGV4dGVuZHMge3R5cGU6IENoZWNrfSAvLyBTdHJpbmcgKHR5cGUpIHRlc3QuXG4gKiAgID8gVmFsdWVcbiAqICAgOiBWYWx1ZSBleHRlbmRzIENoZWNrIC8vIFBhcnRpYWwgdGVzdC5cbiAqICAgPyBWYWx1ZVxuICogICA6IENoZWNrIGV4dGVuZHMgRnVuY3Rpb24gLy8gRnVuY3Rpb24gdGVzdC5cbiAqICAgPyBQcmVkaWNhdGU8Q2hlY2ssIFZhbHVlPiBleHRlbmRzIFZhbHVlXG4gKiAgICAgPyBQcmVkaWNhdGU8Q2hlY2ssIFZhbHVlPlxuICogICAgIDogbmV2ZXJcbiAqICAgOiBuZXZlciAvLyBTb21lIG90aGVyIHRlc3Q/XG4gKiApfSBNYXRjaGVzT25lXG4gKiAgIENoZWNrIHdoZXRoZXIgYSBub2RlIG1hdGNoZXMgYSBwcmltaXRpdmUgY2hlY2sgaW4gdGhlIHR5cGUgc3lzdGVtLlxuICogQHRlbXBsYXRlIFZhbHVlXG4gKiAgIFZhbHVlOyB0eXBpY2FsbHkgdW5pc3QgYE5vZGVgLlxuICogQHRlbXBsYXRlIENoZWNrXG4gKiAgIFZhbHVlOyB0eXBpY2FsbHkgYHVuaXN0LXV0aWwtaXNgLWNvbXBhdGlibGUgdGVzdCwgYnV0IG5vdCBhcnJheXMuXG4gKi9cblxuLyoqXG4gKiBAdHlwZWRlZiB7KFxuICogICBDaGVjayBleHRlbmRzIFJlYWRvbmx5QXJyYXk8YW55PlxuICogICA/IE1hdGNoZXNPbmU8VmFsdWUsIENoZWNrW251bWJlcl0+XG4gKiAgIDogTWF0Y2hlc09uZTxWYWx1ZSwgQ2hlY2s+XG4gKiApfSBNYXRjaGVzXG4gKiAgIENoZWNrIHdoZXRoZXIgYSBub2RlIG1hdGNoZXMgYSBjaGVjayBpbiB0aGUgdHlwZSBzeXN0ZW0uXG4gKiBAdGVtcGxhdGUgVmFsdWVcbiAqICAgVmFsdWU7IHR5cGljYWxseSB1bmlzdCBgTm9kZWAuXG4gKiBAdGVtcGxhdGUgQ2hlY2tcbiAqICAgVmFsdWU7IHR5cGljYWxseSBgdW5pc3QtdXRpbC1pc2AtY29tcGF0aWJsZSB0ZXN0LlxuICovXG5cbi8qKlxuICogQHR5cGVkZWYgezAgfCAxIHwgMiB8IDMgfCA0IHwgNSB8IDYgfCA3IHwgOCB8IDkgfCAxMH0gVWludFxuICogICBOdW1iZXI7IGNhcHBlZCByZWFzb25hYmx5LlxuICovXG5cbi8qKlxuICogQHR5cGVkZWYge0kgZXh0ZW5kcyAwID8gMSA6IEkgZXh0ZW5kcyAxID8gMiA6IEkgZXh0ZW5kcyAyID8gMyA6IEkgZXh0ZW5kcyAzID8gNCA6IEkgZXh0ZW5kcyA0ID8gNSA6IEkgZXh0ZW5kcyA1ID8gNiA6IEkgZXh0ZW5kcyA2ID8gNyA6IEkgZXh0ZW5kcyA3ID8gOCA6IEkgZXh0ZW5kcyA4ID8gOSA6IDEwfSBJbmNyZW1lbnRcbiAqICAgSW5jcmVtZW50IGEgbnVtYmVyIGluIHRoZSB0eXBlIHN5c3RlbS5cbiAqIEB0ZW1wbGF0ZSB7VWludH0gW0k9MF1cbiAqICAgSW5kZXguXG4gKi9cblxuLyoqXG4gKiBAdHlwZWRlZiB7KFxuICogICBOb2RlIGV4dGVuZHMgVW5pc3RQYXJlbnRcbiAqICAgPyBOb2RlIGV4dGVuZHMge2NoaWxkcmVuOiBBcnJheTxpbmZlciBDaGlsZHJlbj59XG4gKiAgICAgPyBDaGlsZCBleHRlbmRzIENoaWxkcmVuID8gTm9kZSA6IG5ldmVyXG4gKiAgICAgOiBuZXZlclxuICogICA6IG5ldmVyXG4gKiApfSBJbnRlcm5hbFBhcmVudFxuICogICBDb2xsZWN0IG5vZGVzIHRoYXQgY2FuIGJlIHBhcmVudHMgb2YgYENoaWxkYC5cbiAqIEB0ZW1wbGF0ZSB7VW5pc3ROb2RlfSBOb2RlXG4gKiAgIEFsbCBub2RlIHR5cGVzIGluIGEgdHJlZS5cbiAqIEB0ZW1wbGF0ZSB7VW5pc3ROb2RlfSBDaGlsZFxuICogICBOb2RlIHRvIHNlYXJjaCBmb3IuXG4gKi9cblxuLyoqXG4gKiBAdHlwZWRlZiB7SW50ZXJuYWxQYXJlbnQ8SW5jbHVzaXZlRGVzY2VuZGFudDxUcmVlPiwgQ2hpbGQ+fSBQYXJlbnRcbiAqICAgQ29sbGVjdCBub2RlcyBpbiBgVHJlZWAgdGhhdCBjYW4gYmUgcGFyZW50cyBvZiBgQ2hpbGRgLlxuICogQHRlbXBsYXRlIHtVbmlzdE5vZGV9IFRyZWVcbiAqICAgQWxsIG5vZGUgdHlwZXMgaW4gYSB0cmVlLlxuICogQHRlbXBsYXRlIHtVbmlzdE5vZGV9IENoaWxkXG4gKiAgIE5vZGUgdG8gc2VhcmNoIGZvci5cbiAqL1xuXG4vKipcbiAqIEB0eXBlZGVmIHsoXG4gKiAgIERlcHRoIGV4dGVuZHMgTWF4XG4gKiAgID8gbmV2ZXJcbiAqICAgOlxuICogICAgIHwgSW50ZXJuYWxQYXJlbnQ8Tm9kZSwgQ2hpbGQ+XG4gKiAgICAgfCBJbnRlcm5hbEFuY2VzdG9yPE5vZGUsIEludGVybmFsUGFyZW50PE5vZGUsIENoaWxkPiwgTWF4LCBJbmNyZW1lbnQ8RGVwdGg+PlxuICogKX0gSW50ZXJuYWxBbmNlc3RvclxuICogICBDb2xsZWN0IG5vZGVzIGluIGBUcmVlYCB0aGF0IGNhbiBiZSBhbmNlc3RvcnMgb2YgYENoaWxkYC5cbiAqIEB0ZW1wbGF0ZSB7VW5pc3ROb2RlfSBOb2RlXG4gKiAgIEFsbCBub2RlIHR5cGVzIGluIGEgdHJlZS5cbiAqIEB0ZW1wbGF0ZSB7VW5pc3ROb2RlfSBDaGlsZFxuICogICBOb2RlIHRvIHNlYXJjaCBmb3IuXG4gKiBAdGVtcGxhdGUge1VpbnR9IFtNYXg9MTBdXG4gKiAgIE1heDsgc2VhcmNoZXMgdXAgdG8gdGhpcyBkZXB0aC5cbiAqIEB0ZW1wbGF0ZSB7VWludH0gW0RlcHRoPTBdXG4gKiAgIEN1cnJlbnQgZGVwdGguXG4gKi9cblxuLyoqXG4gKiBAdHlwZWRlZiB7KFxuICogICBUcmVlIGV4dGVuZHMgVW5pc3RQYXJlbnRcbiAqICAgICA/IERlcHRoIGV4dGVuZHMgTWF4XG4gKiAgICAgICA/IFRyZWVcbiAqICAgICAgIDogVHJlZSB8IEluY2x1c2l2ZURlc2NlbmRhbnQ8VHJlZVsnY2hpbGRyZW4nXVtudW1iZXJdLCBNYXgsIEluY3JlbWVudDxEZXB0aD4+XG4gKiAgICAgOiBUcmVlXG4gKiApfSBJbmNsdXNpdmVEZXNjZW5kYW50XG4gKiAgIENvbGxlY3QgYWxsIChpbmNsdXNpdmUpIGRlc2NlbmRhbnRzIG9mIGBUcmVlYC5cbiAqXG4gKiAgID4g8J+RiSAqKk5vdGUqKjogZm9yIHBlcmZvcm1hbmNlIHJlYXNvbnMsIHRoaXMgc2VlbXMgdG8gYmUgdGhlIGZhc3Rlc3Qgd2F5IHRvXG4gKiAgID4gcmVjdXJzZSB3aXRob3V0IGFjdHVhbGx5IHJ1bm5pbmcgaW50byBhbiBpbmZpbml0ZSBsb29wLCB3aGljaCB0aGVcbiAqICAgPiBwcmV2aW91cyB2ZXJzaW9uIGRpZC5cbiAqICAgPlxuICogICA+IFByYWN0aWNhbGx5LCBhIG1heCBvZiBgMmAgaXMgdHlwaWNhbGx5IGVub3VnaCBhc3N1bWluZyBhIGBSb290YCBpc1xuICogICA+IHBhc3NlZCwgYnV0IGl0IGRvZXNu4oCZdCBpbXByb3ZlIHBlcmZvcm1hbmNlLlxuICogICA+IEl0IGdldHMgaGlnaGVyIHdpdGggYExpc3QgPiBMaXN0SXRlbSA+IFRhYmxlID4gVGFibGVSb3cgPiBUYWJsZUNlbGxgLlxuICogICA+IFVzaW5nIHVwIHRvIGAxMGAgZG9lc27igJl0IGh1cnQgb3IgaGVscCBlaXRoZXIuXG4gKiBAdGVtcGxhdGUge1VuaXN0Tm9kZX0gVHJlZVxuICogICBUcmVlIHR5cGUuXG4gKiBAdGVtcGxhdGUge1VpbnR9IFtNYXg9MTBdXG4gKiAgIE1heDsgc2VhcmNoZXMgdXAgdG8gdGhpcyBkZXB0aC5cbiAqIEB0ZW1wbGF0ZSB7VWludH0gW0RlcHRoPTBdXG4gKiAgIEN1cnJlbnQgZGVwdGguXG4gKi9cblxuLyoqXG4gKiBAY2FsbGJhY2sgVmlzaXRvclxuICogICBIYW5kbGUgYSBub2RlIChtYXRjaGluZyBgdGVzdGAsIGlmIGdpdmVuKS5cbiAqXG4gKiAgIFZpc2l0b3JzIGFyZSBmcmVlIHRvIHRyYW5zZm9ybSBgbm9kZWAuXG4gKiAgIFRoZXkgY2FuIGFsc28gdHJhbnNmb3JtIGBwYXJlbnRgLlxuICpcbiAqICAgUmVwbGFjaW5nIGBub2RlYCBpdHNlbGYsIGlmIGBTS0lQYCBpcyBub3QgcmV0dXJuZWQsIHN0aWxsIGNhdXNlcyBpdHNcbiAqICAgZGVzY2VuZGFudHMgdG8gYmUgd2Fsa2VkICh3aGljaCBpcyBhIGJ1ZykuXG4gKlxuICogICBXaGVuIGFkZGluZyBvciByZW1vdmluZyBwcmV2aW91cyBzaWJsaW5ncyBvZiBgbm9kZWAgKG9yIG5leHQgc2libGluZ3MsIGluXG4gKiAgIGNhc2Ugb2YgcmV2ZXJzZSksIHRoZSBgVmlzaXRvcmAgc2hvdWxkIHJldHVybiBhIG5ldyBgSW5kZXhgIHRvIHNwZWNpZnkgdGhlXG4gKiAgIHNpYmxpbmcgdG8gdHJhdmVyc2UgYWZ0ZXIgYG5vZGVgIGlzIHRyYXZlcnNlZC5cbiAqICAgQWRkaW5nIG9yIHJlbW92aW5nIG5leHQgc2libGluZ3Mgb2YgYG5vZGVgIChvciBwcmV2aW91cyBzaWJsaW5ncywgaW4gY2FzZVxuICogICBvZiByZXZlcnNlKSBpcyBoYW5kbGVkIGFzIGV4cGVjdGVkIHdpdGhvdXQgbmVlZGluZyB0byByZXR1cm4gYSBuZXcgYEluZGV4YC5cbiAqXG4gKiAgIFJlbW92aW5nIHRoZSBjaGlsZHJlbiBwcm9wZXJ0eSBvZiBgcGFyZW50YCBzdGlsbCByZXN1bHRzIGluIHRoZW0gYmVpbmdcbiAqICAgdHJhdmVyc2VkLlxuICogQHBhcmFtIHtWaXNpdGVkfSBub2RlXG4gKiAgIEZvdW5kIG5vZGUuXG4gKiBAcGFyYW0ge1Zpc2l0ZWQgZXh0ZW5kcyBVbmlzdE5vZGUgPyBudW1iZXIgfCB1bmRlZmluZWQgOiBuZXZlcn0gaW5kZXhcbiAqICAgSW5kZXggb2YgYG5vZGVgIGluIGBwYXJlbnRgLlxuICogQHBhcmFtIHtBbmNlc3RvciBleHRlbmRzIFVuaXN0UGFyZW50ID8gQW5jZXN0b3IgfCB1bmRlZmluZWQgOiBuZXZlcn0gcGFyZW50XG4gKiAgIFBhcmVudCBvZiBgbm9kZWAuXG4gKiBAcmV0dXJucyB7VmlzaXRvclJlc3VsdH1cbiAqICAgV2hhdCB0byBkbyBuZXh0LlxuICpcbiAqICAgQW4gYEluZGV4YCBpcyB0cmVhdGVkIGFzIGEgdHVwbGUgb2YgYFtDT05USU5VRSwgSW5kZXhdYC5cbiAqICAgQW4gYEFjdGlvbmAgaXMgdHJlYXRlZCBhcyBhIHR1cGxlIG9mIGBbQWN0aW9uXWAuXG4gKlxuICogICBQYXNzaW5nIGEgdHVwbGUgYmFjayBvbmx5IG1ha2VzIHNlbnNlIGlmIHRoZSBgQWN0aW9uYCBpcyBgU0tJUGAuXG4gKiAgIFdoZW4gdGhlIGBBY3Rpb25gIGlzIGBFWElUYCwgdGhhdCBhY3Rpb24gY2FuIGJlIHJldHVybmVkLlxuICogICBXaGVuIHRoZSBgQWN0aW9uYCBpcyBgQ09OVElOVUVgLCBgSW5kZXhgIGNhbiBiZSByZXR1cm5lZC5cbiAqIEB0ZW1wbGF0ZSB7VW5pc3ROb2RlfSBbVmlzaXRlZD1VbmlzdE5vZGVdXG4gKiAgIFZpc2l0ZWQgbm9kZSB0eXBlLlxuICogQHRlbXBsYXRlIHtVbmlzdFBhcmVudH0gW0FuY2VzdG9yPVVuaXN0UGFyZW50XVxuICogICBBbmNlc3RvciB0eXBlLlxuICovXG5cbi8qKlxuICogQHR5cGVkZWYge1Zpc2l0b3I8VmlzaXRlZCwgUGFyZW50PEFuY2VzdG9yLCBWaXNpdGVkPj59IEJ1aWxkVmlzaXRvckZyb21NYXRjaFxuICogICBCdWlsZCBhIHR5cGVkIGBWaXNpdG9yYCBmdW5jdGlvbiBmcm9tIGEgbm9kZSBhbmQgYWxsIHBvc3NpYmxlIHBhcmVudHMuXG4gKlxuICogICBJdCB3aWxsIGluZmVyIHdoaWNoIHZhbHVlcyBhcmUgcGFzc2VkIGFzIGBub2RlYCBhbmQgd2hpY2ggYXMgYHBhcmVudGAuXG4gKiBAdGVtcGxhdGUge1VuaXN0Tm9kZX0gVmlzaXRlZFxuICogICBOb2RlIHR5cGUuXG4gKiBAdGVtcGxhdGUge1VuaXN0UGFyZW50fSBBbmNlc3RvclxuICogICBQYXJlbnQgdHlwZS5cbiAqL1xuXG4vKipcbiAqIEB0eXBlZGVmIHsoXG4gKiAgIEJ1aWxkVmlzaXRvckZyb21NYXRjaDxcbiAqICAgICBNYXRjaGVzPERlc2NlbmRhbnQsIENoZWNrPixcbiAqICAgICBFeHRyYWN0PERlc2NlbmRhbnQsIFVuaXN0UGFyZW50PlxuICogICA+XG4gKiApfSBCdWlsZFZpc2l0b3JGcm9tRGVzY2VuZGFudHNcbiAqICAgQnVpbGQgYSB0eXBlZCBgVmlzaXRvcmAgZnVuY3Rpb24gZnJvbSBhIGxpc3Qgb2YgZGVzY2VuZGFudHMgYW5kIGEgdGVzdC5cbiAqXG4gKiAgIEl0IHdpbGwgaW5mZXIgd2hpY2ggdmFsdWVzIGFyZSBwYXNzZWQgYXMgYG5vZGVgIGFuZCB3aGljaCBhcyBgcGFyZW50YC5cbiAqIEB0ZW1wbGF0ZSB7VW5pc3ROb2RlfSBEZXNjZW5kYW50XG4gKiAgIE5vZGUgdHlwZS5cbiAqIEB0ZW1wbGF0ZSB7VGVzdH0gQ2hlY2tcbiAqICAgVGVzdCB0eXBlLlxuICovXG5cbi8qKlxuICogQHR5cGVkZWYgeyhcbiAqICAgQnVpbGRWaXNpdG9yRnJvbURlc2NlbmRhbnRzPFxuICogICAgIEluY2x1c2l2ZURlc2NlbmRhbnQ8VHJlZT4sXG4gKiAgICAgQ2hlY2tcbiAqICAgPlxuICogKX0gQnVpbGRWaXNpdG9yXG4gKiAgIEJ1aWxkIGEgdHlwZWQgYFZpc2l0b3JgIGZ1bmN0aW9uIGZyb20gYSB0cmVlIGFuZCBhIHRlc3QuXG4gKlxuICogICBJdCB3aWxsIGluZmVyIHdoaWNoIHZhbHVlcyBhcmUgcGFzc2VkIGFzIGBub2RlYCBhbmQgd2hpY2ggYXMgYHBhcmVudGAuXG4gKiBAdGVtcGxhdGUge1VuaXN0Tm9kZX0gW1RyZWU9VW5pc3ROb2RlXVxuICogICBOb2RlIHR5cGUuXG4gKiBAdGVtcGxhdGUge1Rlc3R9IFtDaGVjaz1UZXN0XVxuICogICBUZXN0IHR5cGUuXG4gKi9cblxuaW1wb3J0IHt2aXNpdFBhcmVudHN9IGZyb20gJ3VuaXN0LXV0aWwtdmlzaXQtcGFyZW50cydcblxuZXhwb3J0IHtDT05USU5VRSwgRVhJVCwgU0tJUH0gZnJvbSAndW5pc3QtdXRpbC12aXNpdC1wYXJlbnRzJ1xuXG4vKipcbiAqIFZpc2l0IG5vZGVzLlxuICpcbiAqIFRoaXMgYWxnb3JpdGhtIHBlcmZvcm1zICpkZXB0aC1maXJzdCogKnRyZWUgdHJhdmVyc2FsKiBpbiAqcHJlb3JkZXIqXG4gKiAoKipOTFIqKikgb3IgaWYgYHJldmVyc2VgIGlzIGdpdmVuLCBpbiAqcmV2ZXJzZSBwcmVvcmRlciogKCoqTlJMKiopLlxuICpcbiAqIFlvdSBjYW4gY2hvb3NlIGZvciB3aGljaCBub2RlcyBgdmlzaXRvcmAgaXMgY2FsbGVkIGJ5IHBhc3NpbmcgYSBgdGVzdGAuXG4gKiBGb3IgY29tcGxleCB0ZXN0cywgeW91IHNob3VsZCB0ZXN0IHlvdXJzZWxmIGluIGB2aXNpdG9yYCwgYXMgaXQgd2lsbCBiZVxuICogZmFzdGVyIGFuZCB3aWxsIGhhdmUgaW1wcm92ZWQgdHlwZSBpbmZvcm1hdGlvbi5cbiAqXG4gKiBXYWxraW5nIHRoZSB0cmVlIGlzIGFuIGludGVuc2l2ZSB0YXNrLlxuICogTWFrZSB1c2Ugb2YgdGhlIHJldHVybiB2YWx1ZXMgb2YgdGhlIHZpc2l0b3Igd2hlbiBwb3NzaWJsZS5cbiAqIEluc3RlYWQgb2Ygd2Fsa2luZyBhIHRyZWUgbXVsdGlwbGUgdGltZXMsIHdhbGsgaXQgb25jZSwgdXNlIGB1bmlzdC11dGlsLWlzYFxuICogdG8gY2hlY2sgaWYgYSBub2RlIG1hdGNoZXMsIGFuZCB0aGVuIHBlcmZvcm0gZGlmZmVyZW50IG9wZXJhdGlvbnMuXG4gKlxuICogWW91IGNhbiBjaGFuZ2UgdGhlIHRyZWUuXG4gKiBTZWUgYFZpc2l0b3JgIGZvciBtb3JlIGluZm8uXG4gKlxuICogQG92ZXJsb2FkXG4gKiBAcGFyYW0ge1RyZWV9IHRyZWVcbiAqIEBwYXJhbSB7Q2hlY2t9IGNoZWNrXG4gKiBAcGFyYW0ge0J1aWxkVmlzaXRvcjxUcmVlLCBDaGVjaz59IHZpc2l0b3JcbiAqIEBwYXJhbSB7Ym9vbGVhbiB8IG51bGwgfCB1bmRlZmluZWR9IFtyZXZlcnNlXVxuICogQHJldHVybnMge3VuZGVmaW5lZH1cbiAqXG4gKiBAb3ZlcmxvYWRcbiAqIEBwYXJhbSB7VHJlZX0gdHJlZVxuICogQHBhcmFtIHtCdWlsZFZpc2l0b3I8VHJlZT59IHZpc2l0b3JcbiAqIEBwYXJhbSB7Ym9vbGVhbiB8IG51bGwgfCB1bmRlZmluZWR9IFtyZXZlcnNlXVxuICogQHJldHVybnMge3VuZGVmaW5lZH1cbiAqXG4gKiBAcGFyYW0ge1VuaXN0Tm9kZX0gdHJlZVxuICogICBUcmVlIHRvIHRyYXZlcnNlLlxuICogQHBhcmFtIHtWaXNpdG9yIHwgVGVzdH0gdGVzdE9yVmlzaXRvclxuICogICBgdW5pc3QtdXRpbC1pc2AtY29tcGF0aWJsZSB0ZXN0IChvcHRpb25hbCwgb21pdCB0byBwYXNzIGEgdmlzaXRvcikuXG4gKiBAcGFyYW0ge1Zpc2l0b3IgfCBib29sZWFuIHwgbnVsbCB8IHVuZGVmaW5lZH0gW3Zpc2l0b3JPclJldmVyc2VdXG4gKiAgIEhhbmRsZSBlYWNoIG5vZGUgKHdoZW4gdGVzdCBpcyBvbWl0dGVkLCBwYXNzIGByZXZlcnNlYCkuXG4gKiBAcGFyYW0ge2Jvb2xlYW4gfCBudWxsIHwgdW5kZWZpbmVkfSBbbWF5YmVSZXZlcnNlPWZhbHNlXVxuICogICBUcmF2ZXJzZSBpbiByZXZlcnNlIHByZW9yZGVyIChOUkwpIGluc3RlYWQgb2YgdGhlIGRlZmF1bHQgcHJlb3JkZXIgKE5MUikuXG4gKiBAcmV0dXJucyB7dW5kZWZpbmVkfVxuICogICBOb3RoaW5nLlxuICpcbiAqIEB0ZW1wbGF0ZSB7VW5pc3ROb2RlfSBUcmVlXG4gKiAgIE5vZGUgdHlwZS5cbiAqIEB0ZW1wbGF0ZSB7VGVzdH0gQ2hlY2tcbiAqICAgYHVuaXN0LXV0aWwtaXNgLWNvbXBhdGlibGUgdGVzdC5cbiAqL1xuZXhwb3J0IGZ1bmN0aW9uIHZpc2l0KHRyZWUsIHRlc3RPclZpc2l0b3IsIHZpc2l0b3JPclJldmVyc2UsIG1heWJlUmV2ZXJzZSkge1xuICAvKiogQHR5cGUge2Jvb2xlYW4gfCBudWxsIHwgdW5kZWZpbmVkfSAqL1xuICBsZXQgcmV2ZXJzZVxuICAvKiogQHR5cGUge1Rlc3R9ICovXG4gIGxldCB0ZXN0XG4gIC8qKiBAdHlwZSB7VmlzaXRvcn0gKi9cbiAgbGV0IHZpc2l0b3JcblxuICBpZiAoXG4gICAgdHlwZW9mIHRlc3RPclZpc2l0b3IgPT09ICdmdW5jdGlvbicgJiZcbiAgICB0eXBlb2YgdmlzaXRvck9yUmV2ZXJzZSAhPT0gJ2Z1bmN0aW9uJ1xuICApIHtcbiAgICB0ZXN0ID0gdW5kZWZpbmVkXG4gICAgdmlzaXRvciA9IHRlc3RPclZpc2l0b3JcbiAgICByZXZlcnNlID0gdmlzaXRvck9yUmV2ZXJzZVxuICB9IGVsc2Uge1xuICAgIC8vIEB0cy1leHBlY3QtZXJyb3I6IGFzc3VtZSB0aGUgb3ZlcmxvYWQgd2l0aCB0ZXN0IHdhcyBnaXZlbi5cbiAgICB0ZXN0ID0gdGVzdE9yVmlzaXRvclxuICAgIC8vIEB0cy1leHBlY3QtZXJyb3I6IGFzc3VtZSB0aGUgb3ZlcmxvYWQgd2l0aCB0ZXN0IHdhcyBnaXZlbi5cbiAgICB2aXNpdG9yID0gdmlzaXRvck9yUmV2ZXJzZVxuICAgIHJldmVyc2UgPSBtYXliZVJldmVyc2VcbiAgfVxuXG4gIHZpc2l0UGFyZW50cyh0cmVlLCB0ZXN0LCBvdmVybG9hZCwgcmV2ZXJzZSlcblxuICAvKipcbiAgICogQHBhcmFtIHtVbmlzdE5vZGV9IG5vZGVcbiAgICogQHBhcmFtIHtBcnJheTxVbmlzdFBhcmVudD59IHBhcmVudHNcbiAgICovXG4gIGZ1bmN0aW9uIG92ZXJsb2FkKG5vZGUsIHBhcmVudHMpIHtcbiAgICBjb25zdCBwYXJlbnQgPSBwYXJlbnRzW3BhcmVudHMubGVuZ3RoIC0gMV1cbiAgICBjb25zdCBpbmRleCA9IHBhcmVudCA/IHBhcmVudC5jaGlsZHJlbi5pbmRleE9mKG5vZGUpIDogdW5kZWZpbmVkXG4gICAgcmV0dXJuIHZpc2l0b3Iobm9kZSwgaW5kZXgsIHBhcmVudClcbiAgfVxufVxuIl0sIm1hcHBpbmdzIjoiOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7QUFrT0EsSUFBQUEsc0JBQUEsR0FBQUMsT0FBQTtBQWxPQTtBQUNBO0FBQ0E7QUFDQTs7QUFFQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBOztBQUVBOztBQUVBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTs7QUFFQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBOztBQUVBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTs7QUFFQTtBQUNBO0FBQ0E7QUFDQTs7QUFFQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7O0FBRUE7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTs7QUFFQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBOztBQUVBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTs7QUFFQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTs7QUFFQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBOztBQUVBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBOztBQUVBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTs7QUFFQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7O0FBTUE7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNBO0FBQ0E7QUFDQTtBQUNPLFNBQVNDLEtBQUtBLENBQUNDLElBQUksRUFBRUMsYUFBYSxFQUFFQyxnQkFBZ0IsRUFBRUMsWUFBWSxFQUFFO0VBQ3pFO0VBQ0EsSUFBSUMsT0FBTztFQUNYO0VBQ0EsSUFBSUMsSUFBSTtFQUNSO0VBQ0EsSUFBSUMsT0FBTztFQUVYLElBQ0UsT0FBT0wsYUFBYSxLQUFLLFVBQVUsSUFDbkMsT0FBT0MsZ0JBQWdCLEtBQUssVUFBVSxFQUN0QztJQUNBRyxJQUFJLEdBQUdFLFNBQVM7SUFDaEJELE9BQU8sR0FBR0wsYUFBYTtJQUN2QkcsT0FBTyxHQUFHRixnQkFBZ0I7RUFDNUIsQ0FBQyxNQUFNO0lBQ0w7SUFDQUcsSUFBSSxHQUFHSixhQUFhO0lBQ3BCO0lBQ0FLLE9BQU8sR0FBR0osZ0JBQWdCO0lBQzFCRSxPQUFPLEdBQUdELFlBQVk7RUFDeEI7RUFFQSxJQUFBSyxtQ0FBWSxFQUFDUixJQUFJLEVBQUVLLElBQUksRUFBRUksUUFBUSxFQUFFTCxPQUFPLENBQUM7O0VBRTNDO0FBQ0Y7QUFDQTtBQUNBO0VBQ0UsU0FBU0ssUUFBUUEsQ0FBQ0MsSUFBSSxFQUFFQyxPQUFPLEVBQUU7SUFDL0IsTUFBTUMsTUFBTSxHQUFHRCxPQUFPLENBQUNBLE9BQU8sQ0FBQ0UsTUFBTSxHQUFHLENBQUMsQ0FBQztJQUMxQyxNQUFNQyxLQUFLLEdBQUdGLE1BQU0sR0FBR0EsTUFBTSxDQUFDRyxRQUFRLENBQUNDLE9BQU8sQ0FBQ04sSUFBSSxDQUFDLEdBQUdILFNBQVM7SUFDaEUsT0FBT0QsT0FBTyxDQUFDSSxJQUFJLEVBQUVJLEtBQUssRUFBRUYsTUFBTSxDQUFDO0VBQ3JDO0FBQ0YiLCJpZ25vcmVMaXN0IjpbXX0=
